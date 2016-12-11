@@ -45,7 +45,7 @@ class ASlice
     @markers = []
     @predecessor = nil
     @successor = nil
-  end
+  end # def initialize
   def insert(offset, slice)
     case offset
     when 0..LATCH_TOLERANCE
@@ -62,9 +62,9 @@ class ASlice
       slice.predecessor = self
       @successor = slice
     else
-      warn "invalid offset: ${offset}"
+      warn "invalid offset: #{offset}"
     end
-  end
+  end # def insert
   # remove region from offset from (inclusive)
   # till offset to (exclusive) from recording
   def delete(from, to)
@@ -77,7 +77,7 @@ class ASlice
       else
         @offset = to
       end
-    else if offset > @duration - LATCH_TOLERANCE
+    elsif offset > @duration - LATCH_TOLERANCE
       # delete from +from+ till slice ending
       @duration += from
     else
@@ -90,7 +90,7 @@ class ASlice
   end
   def split(offset)
     if offset < LATCH_TOLERANCE or offset > @duration - LATCH_TOLERANCE
-      warn "invalid offset: ${offset}"
+      warn "invalid offset: #{offset}"
       return
     end
     tail = ASlice.new(@file, @offset + offset, @duration - offset)
@@ -116,7 +116,7 @@ class ASlice
     @markers << m
   end
   def update_duration
-    `soxi "${file}.mp3"`.find {|l| l =~ /^Duration\s*:\s*(\d+):(\d\d):(\d\d).(\d+)/}
+    `soxi "#{file}.mp3"`.find {|l| l =~ /^Duration\s*:\s*(\d+):(\d\d):(\d\d).(\d+)/}
     ctx.pos.slice.duration = (($1.to_i * 60 + $2.to_i) * 60 + $3.to_i) * 1000 + ($4 + "000")[0..2].to_i
   end
 end # class ASlice
@@ -178,7 +178,7 @@ class Position
           go_slice_begin
           break
         end
-      else if target_timecode >= slice_end
+      elsif target_timecode >= slice_end
         if next_slice?
           go_next_slice
         else
@@ -214,19 +214,22 @@ class StateBase; end
 class StateInitial < StateBase; end
 
 class StateBase
-  include Singleton
+  
+  def initialize
+  end
+  
   #def method_missingXXX(method_name)
-  #  warn "no such method: ${method_name}"
+  #  warn "no such method: #{method_name}"
   #end
-
+  
   def reset(ctx)
     ctx.reset
-    return StateInitial.instance
+    StateInitial.instance
   end
 
   private
   def record_command(cmd, *args)
-    puts cmd + " (" + args.join(", ") + ")"
+    puts "#{cmd} (#{args.join(', ')})"
   end
   def run_recorder(ctx)
     file = File.join(AUDIO_DIR, DateTime.now.strftime('%Y-%m-%d_%H-%M-%S_%L_%z'))
@@ -234,13 +237,15 @@ class StateBase
     ctx.pos.slice.insert(ctx.pos.offset, new_slice) if ctx.pos.slice
     ctx.pos.slice = new_slice
     ctx.pos.offset = 0
-    ctx.pipe = open("|rec '${file}.mp3'")
+    ctx.pipe = IO.popen("rec '#{file}.mp3'", "r+")
     record_command(:record, file)
   end
   def stop_recorder(ctx)
-    ctx.pipe << "q\n"
+    warn ctx.pipe.pid.inspect
+    Process.kill("SIGINT", ctx.pipe.pid)
 
-    system("sox '${ctx.pos.file}' '${reverse_filename(ctx.pos.file)}' reverse") || warn "failed to create reverse file"
+    file = ctx.pos.slice.file
+    system("sox '#{file}' '#{reverse_filename(file)}' reverse") or warn "failed to create reverse file"
     
     ctx.pos.slice.update_duration
     ctx.pos.offset = ctx.pos.slice.duration
@@ -258,7 +263,7 @@ class StateBase
     file = ctx.pos.slice.file
     if ctx.speed > 0
       direction = :forward
-    else if ctx.speed < 0
+    elsif ctx.speed < 0
       direction = :reverse
       file = reverse_filename(file)
     else
@@ -267,7 +272,7 @@ class StateBase
     end
     Thread.new do
       while true
-        ctx.pipe = open("|mplayer -slave -quiet -af scaletempo -ss ${start_offset} -endpos ${ctx.pos.slice.duration} '${file}'")
+        ctx.pipe = open("|mplayer -slave -quiet -af scaletempo -ss #{start_offset} -endpos #{ctx.pos.slice.duration} '#{file}'")
         if direction == :forward
           ctx.pos.go_slice_end
           if ctx.pos.slice.next_slice?
@@ -303,7 +308,7 @@ class StateBase
       ctx.pos.offset = file_offset - ctx.pos.slice.offset
       ctx.pos.offset = ctx.pos.slice.duration if ctx.pos.offset > ctx.pos.slice.duration - LATCH_TOLERANCE
       ctx.pos.timecode = ctx.pos.slice_begin + ctx.pos.offset
-    else if ctx.speed < 0
+    elsif ctx.speed < 0
       ctx.pos.offset = ctx.pos.slice.offset + ctx.pos.slice.duration - file_offset
       ctx.pos.offset = 0 if ctx.pos.offset < LATCH_TOLERANCE
       ctx.pos.timecode = ctx.pos.slice_begin + ctx.pos.offset      
@@ -324,13 +329,13 @@ class StateBase
     if amount > 0 and ctx.speed <= 0
       stop_player(ctx)
       run_player(ctx)
-    else if amount < 0 and ctx.speed >= 0
+    elsif amount < 0 and ctx.speed >= 0
       stop_player(ctx)
       run_player(ctx, :reverse)
     else
       resume_player(ctx)
     end
-    ctx.pipe << "speed_set ${amount.abs}"
+    ctx.pipe << "speed_set #{amount.abs}"
     ctx.speed = amount
   end
   def reverse_filename(filename)
@@ -339,9 +344,10 @@ class StateBase
 end # class StateBase
 
 class StateInitial < StateBase
+  include Singleton
   def record(ctx)
     run_recorder(ctx)
-    return StateRecording.instance
+    StateRecording.instance
   end
   def load(ctx, record_filename)
     state_stopped = StateStopped.instance
@@ -353,7 +359,7 @@ class StateInitial < StateBase
         when /^.* > seek (.*)$/
           state_stopped.seek($1)
         else
-          warn "ignoring line `${l.chomp}'"
+          warn "ignoring line `#{l.chomp}'"
         end
       end
     end
@@ -362,6 +368,7 @@ class StateInitial < StateBase
 end # class StateInitial
 
 class StateRecording < StateBase
+  include Singleton
   def pause(ctx)
     pause_recorder(ctx)
     StateRecordingPause.instance
@@ -377,6 +384,7 @@ class StateRecording < StateBase
 end # class StateRecording
 
 class StateRecordingPause < StateBase
+  include Singleton
   def resume(ctx)
     resume_recorder(ctx)
     StateRecording.instance
@@ -392,6 +400,7 @@ class StateRecordingPause < StateBase
 end # class StateRecordingPause
 
 class StatePlaying < StateBase
+  include Singleton
   def pause(ctx)
     pause_player(ctx)
     StatePlayingPause.instance
@@ -445,6 +454,7 @@ class StatePlaying < StateBase
 end # class StatePlaying
 
 class StatePlayingPause < StateBase
+  include Singleton
   def resume(ctx)
     resume_player(ctx)
     StatePlaying.instance
@@ -460,6 +470,7 @@ class StatePlayingPause < StateBase
 end # class StatePlayingPause
 
 class StateStopped < StateBase
+  include Singleton
   def play(ctx)
     run_player(ctx)
     StatePlaying.instance
@@ -467,6 +478,10 @@ class StateStopped < StateBase
   def record(ctx)
     run_recorder(ctx)
     StateRecording.instance
+  end
+  def set_marker(ctx, *args)
+    # TODO args
+    ctx.pos.slice.set_marker(ctx.pos.offset)
   end
   def load(ctx, slice_filename)
     new_slice = ASlice.new(slice_filename)
@@ -478,6 +493,19 @@ class StateStopped < StateBase
     ctx.pos.seek(timecode)
     return self
   end
+  def delete(ctx, *args)
+    # TODO
+    raise "not yet implemented"
+    ## TODO arguments
+    #pos = ctx.pos
+    #offset = pos.offset
+    #slice = pos.slice
+    #from_marker = slice.marker_before(offset)
+    #to_marker = slice.marker_at_or_after(offset)
+    #if from_marker and to_marker
+    #  slice.delete(from_marker.offset, to_marker.offset)
+    #end
+  end
 end
 
 context = StateMachineContext.new
@@ -488,16 +516,19 @@ keep_running = true
 while keep_running
   cmd = STDIN.gets
   case cmd
+  when /^\s*(#.*)?$/
+    # comment => ignore
   when /^quit$/
     state = state.reset(context)
     keep_running = false
   when /^load (.*)$/
     state = state.reset(context)
-    start = state.load(context, $1)
+    state = state.load(context, $1)
   when /^record$/
     state = state.record(context)
-  when /delete( (.*)/
-    # TODO
+  when /delete( (.*))?/
+    # TODO: optional arguments
+    state = state.delete(context, $1)
   when /^play$/
     state = state.play(context)
   when /^stop$/
@@ -534,8 +565,10 @@ while keep_running
 #    state = state.seek(amount, mode)
     
   when /set_marker( (.*))?/
-    
+    state = state.set_marker(context, $1)
   when /rm_marker( (.*))?/
+    raise "not yet supported"
   else
+    warn "unknown command: `#{cmd.chomp}'"
   end
 end
