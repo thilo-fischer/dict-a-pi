@@ -29,6 +29,13 @@ require 'date'
 # time in milliseconds allowed to round to get to audio slice edges or markers
 LATCH_TOLERANCE = 200
 
+# must be file extension recognized by sox
+FILE_FORMAT = "mp3"
+
+def dbg(*args)
+  warn args
+end
+
 # Audio slice
 class ASlice
   # file - filename of the audio file
@@ -116,8 +123,8 @@ class ASlice
     @markers << m
   end
   def update_duration
-    `soxi "#{file}.mp3"`.find {|l| l =~ /^Duration\s*:\s*(\d+):(\d\d):(\d\d).(\d+)/}
-    ctx.pos.slice.duration = (($1.to_i * 60 + $2.to_i) * 60 + $3.to_i) * 1000 + ($4 + "000")[0..2].to_i
+    `soxi '#{file}'`.lines.find {|l| l =~ /^Duration\s*:\s*(\d+):(\d\d):(\d\d).(\d+)/}
+    @duration = (($1.to_i * 60 + $2.to_i) * 60 + $3.to_i) * 1000 + ($4 + "000")[0..2].to_i
   end
 end # class ASlice
 
@@ -215,9 +222,6 @@ class StateInitial < StateBase; end
 
 class StateBase
   
-  def initialize
-  end
-  
   #def method_missingXXX(method_name)
   #  warn "no such method: #{method_name}"
   #end
@@ -228,16 +232,18 @@ class StateBase
   end
 
   private
+  # helper methods
+  # XXX move to separate class or to module? (If moving to module: make classes including the module implicitly include +Singleton+??)
   def record_command(cmd, *args)
     puts "#{cmd} (#{args.join(', ')})"
   end
   def run_recorder(ctx)
-    file = File.join(AUDIO_DIR, DateTime.now.strftime('%Y-%m-%d_%H-%M-%S_%L_%z'))
+    file = File.join(AUDIO_DIR, "#{DateTime.now.strftime('%Y-%m-%d_%H-%M-%S_%L_%z')}.#{FILE_FORMAT}")
     new_slice = ASlice.new(file)
     ctx.pos.slice.insert(ctx.pos.offset, new_slice) if ctx.pos.slice
     ctx.pos.slice = new_slice
     ctx.pos.offset = 0
-    ctx.pipe = IO.popen("rec '#{file}.mp3'", "r+")
+    ctx.pipe = IO.popen("rec '#{file}'", "r+")
     record_command(:record, file)
   end
   def stop_recorder(ctx)
@@ -245,6 +251,10 @@ class StateBase
     Process.kill("SIGINT", ctx.pipe.pid)
 
     file = ctx.pos.slice.file
+    dbg "polling for file `#{file}' ..."
+    sleep(0.1) until File.exist?(file)
+    dbg "=> file `#{file}' exists"
+
     system("sox '#{file}' '#{reverse_filename(file)}' reverse") or warn "failed to create reverse file"
     
     ctx.pos.slice.update_duration
@@ -339,7 +349,7 @@ class StateBase
     ctx.speed = amount
   end
   def reverse_filename(filename)
-    filename.sub(/\.mp3$/, '.reverse.mp3')
+    filename.sub(/\.#{FILE_FORMAT}$/, ".reverse.#{FILE_FORMAT}")
   end
 end # class StateBase
 
