@@ -5,8 +5,65 @@
 #include <assert.h>
 #include <SDL.h>
 
+enum buttons {
+  B_PLAY,  // cue / playback, pause, lock recording
+  B_REC,   // record
+  B_MARK,  // set marking
+  B_DEL,   // delete
+  B_LEFT,  // jmp previous marker
+  B_RIGHT, // jmp next marker
+  B_UP,    // next slot
+  B_DOWN,  // previous slot
+  B_LAST_ELEMENT
+};
+
+enum button_state {
+  BS_DOWN, // button press
+  BS_UP,   // button release
+};
+
+
+struct state;
+
+typedef const struct state *(*state_transition)();
+
+struct state {
+  state_transition transitions[B_LAST_ELEMENT];
+};
+
+const struct state *trans_start_playback();
+const struct state *trans_start_record();
+const struct state *trans_set_mark();
+
+const struct state state_initial = {
+  .transitions = {
+    [B_PLAY] = trans_start_playback,
+    [B_REC]  = trans_start_record,
+    [B_MARK] = trans_set_mark,
+    [B_DEL]  = trans_delete,
+  }
+};
+
+const struct state *current_state = &state_initial;
+
+const struct state *trans_start_playback() {
+  printf("%s\n", "play");
+  return &state_playback;
+}
+
+const struct state *trans_start_record() {
+  printf("%s\n", "record");
+  return &state_transient_recording;
+}
+
+const struct state *trans_set_mark() {
+  printf("%s\n", "set_marker");
+  return current_state;
+}
+
+
 void btn_nop() {
-  printf("# nop\n"); // TODO for debugging only -> remove
+  fprintf(stderr, "# nop\n"); // TODO for debugging only -> remove
 }
 
 void rec_btn_dn() {
@@ -34,7 +91,7 @@ void delete_btn_up() {
 }
 
 void axis_nop(Sint16 value) {
-  printf("# nop\n"); // TODO for debugging only -> remove
+  fprintf(stderr, "# nop\n"); // TODO for debugging only -> remove
 }
 
 void speed_axis_motion(Sint16 value) {
@@ -135,15 +192,19 @@ int main(int argc, char *argv[]) {
     return -1;
   }
 
-  printf ( "%i achsen\n", SDL_JoystickNumAxes ( js ) );
-  printf ( "%i rollbaelle\n", SDL_JoystickNumBalls ( js ) );
-  printf ( "%i heads\n", SDL_JoystickNumHats ( js ) );
-  printf ( "%i koepfe\n", SDL_JoystickNumButtons ( js ) );
+  SDL_Event event;
+
+  // flush all initial events
+  while (SDL_PollEvent(&event)) {}
+  
+  fprintf(stderr, "connected device: %s\n", SDL_JoystickName(js));
+  fprintf(stderr, "buttons: %d\n", SDL_JoystickNumButtons(js));
+  fprintf(stderr, "axes: %d\n", SDL_JoystickNumAxes(js));
+  fprintf(stderr, "hats: %d\n", SDL_JoystickNumHats(js));
 
   bool keep_running = true;
   while(keep_running) {
-    SDL_Delay(200);
-    SDL_Event event;
+    SDL_Delay(5);
 
     while (SDL_PollEvent(&event)) {
       switch(event.type) {
