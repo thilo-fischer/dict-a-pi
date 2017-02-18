@@ -1,4 +1,21 @@
-// gcc sdl-joystick.c -o sdl-joystick `sdl2-config --libs` `sdl2-config --cflags`
+// Copyright (c) 2016-2017  Thilo Fischer.
+//
+// This file is part of dictapi.
+//
+// dictapi is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+// 
+// dictapi is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+// 
+// You should have received a copy of the GNU General Public License
+// along with tobak.  If not, see <http://www.gnu.org/licenses/>.
+
+// g++ sdl-joystick.cpp -o sdl-joystick `sdl2-config --libs` `sdl2-config --cflags` && ./sdl-joystick
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -40,7 +57,7 @@ const struct state state_initial = {
     [B_PLAY] = trans_start_playback,
     [B_REC]  = trans_start_record,
     [B_MARK] = trans_set_mark,
-    [B_DEL]  = trans_delete,
+    //[B_DEL]  = trans_delete,
   }
 };
 
@@ -48,12 +65,12 @@ const struct state *current_state = &state_initial;
 
 const struct state *trans_start_playback() {
   printf("%s\n", "play");
-  return &state_playback;
+  return &state_initial;
 }
 
 const struct state *trans_start_record() {
   printf("%s\n", "record");
-  return &state_transient_recording;
+  return &state_initial;
 }
 
 const struct state *trans_set_mark() {
