@@ -22,79 +22,118 @@
 #include <iostream>
 #include <SDL.h>
 
+// forward declarations (sort of)
 class IState;
+extern IState &state_default;
+extern IState &state_initial;
+extern IState &state_playing;
+extern IState &state_recording_plain;
+extern IState &state_recording_locked;
 extern IState *current_state;
+
+bool keep_running = true;
 
 enum eButtons {
   BTN_DUMB,   // not in use
   BTN_PLAY,   // cue / playback, pause, lock recording
   BTN_RECORD, // record
   BTN_MARK,   // set marking
+  BTN_RM_MARK,// remove marking
   BTN_DELETE, // delete
   BTN_LEFT,   // jmp previous marker
   BTN_RIGHT,  // jmp next marker
   BTN_PREV,   // previous slot
   BTN_NEXT,   // next slot
+  BTN_QUIT,   // quit application
 };
+
+enum eDelete {
+  DEL_INACTIVE,
+  DEL_OPTION,
+  DEL_ACK,
+};
+enum eDelete delete_state = DEL_INACTIVE;
+
+Sint8 quit_btn_cnt = 0;
+const Sint8 quit_btn_min = 3;
 
 class IState {
 public:
-  virtual IState *process(eButtons button, bool button_press) = 0;
+  virtual void process(eButtons button, bool button_press) = 0;
 };
 
 class BaseState : public IState {
 public:
   /// dispatch to the according member function implemented by the child classes
   /// @param[in] button_press true if button was pressed down, false if button was released
-  IState *process(eButtons button, bool button_press) {
+  void process(eButtons button, bool button_press) {
     switch (button) {
     case BTN_DUMB:
       std::cerr << "Ignoring unused button event." << std::endl;      
       break;
     case BTN_PLAY:
       if (button_press)
-        return btn_press_play();
+        current_state = btn_press_play();
       else  
-        return btn_release_play();
+        current_state = btn_release_play();
+      break;
     case BTN_RECORD:
       if (button_press)
-        return btn_press_record();
+        current_state = btn_press_record();
       else  
-        return btn_release_record();
+        current_state = btn_release_record();
+      break;
     case BTN_MARK:
       if (button_press)
-        return btn_press_mark();
+        current_state = btn_press_mark();
       else  
-        return btn_release_mark();
+        current_state = btn_release_mark();
+      break;
+    case BTN_RM_MARK:
+      if (button_press)
+        current_state = btn_press_rm_mark();
+      else  
+        current_state = btn_release_rm_mark();
+      break;
     case BTN_DELETE:
       if (button_press)
-        return btn_press_delete();
+        current_state = btn_press_delete();
       else  
-        return btn_release_delete();
+        current_state = btn_release_delete();
+      break;
     case BTN_LEFT:
       if (button_press)
-        return btn_press_left();
+        current_state = btn_press_left();
       else  
-        return btn_release_left();
+        current_state = btn_release_left();
+      break;
     case BTN_RIGHT:
       if (button_press)
-        return btn_press_right();
+        current_state = btn_press_right();
       else  
-        return btn_release_right();
+        current_state = btn_release_right();
+      break;
     case BTN_PREV:
       if (button_press)
-        return btn_press_prev();
+        current_state = btn_press_prev();
       else  
-        return btn_release_prev();
+        current_state = btn_release_prev();
+      break;
     case BTN_NEXT:
       if (button_press)
-        return btn_press_next();
+        current_state = btn_press_next();
       else  
-        return btn_release_next();
-    default:
+        current_state = btn_release_next();
+       break;
+    case BTN_QUIT:
+      if (button_press)
+        current_state = btn_press_quit();
+      else  
+        current_state = btn_release_quit();
+       break;
+   default:
       std::cerr << "Unknown button: " << button << std::endl;
     }
-    return current_state;
   }
 protected:
   virtual IState *btn_press_play() = 0;
@@ -103,6 +142,8 @@ protected:
   virtual IState *btn_release_record() = 0;
   virtual IState *btn_press_mark() = 0;
   virtual IState *btn_release_mark() = 0;
+  virtual IState *btn_press_rm_mark() = 0;
+  virtual IState *btn_release_rm_mark() = 0;
   virtual IState *btn_press_delete() = 0;
   virtual IState *btn_release_delete() = 0;
   virtual IState *btn_press_left() = 0;
@@ -113,24 +154,24 @@ protected:
   virtual IState *btn_release_prev() = 0;
   virtual IState *btn_press_next() = 0;
   virtual IState *btn_release_next() = 0;
+  virtual IState *btn_press_quit() = 0;
+  virtual IState *btn_release_quit() = 0;
 };
 
 class StateDefault : public BaseState {
 protected:
   IState *btn_press_play() {
     std::cout << "play" << std::endl;
-    return current_state;
+    return &state_playing;
   }
   IState *btn_release_play() {
-    std::cout << "pause" << std::endl;
     return current_state;
   }
   IState *btn_press_record() {
     std::cout << "record" << std::endl;
-    return current_state;
+    return &state_recording_plain;
   }
   IState *btn_release_record() {
-    std::cout << "pause" << std::endl;
     return current_state;
   }
   IState *btn_press_mark() {
@@ -138,15 +179,40 @@ protected:
     return current_state;
   }
   IState *btn_release_mark() {
-    //std::cout << "set_marker" << std::endl;
+    return current_state;
+  }
+  IState *btn_press_rm_mark() {
+    std::cout << "rm_marker" << std::endl;
+    return current_state;
+  }
+  IState *btn_release_rm_mark() {
     return current_state;
   }
   IState *btn_press_delete() {
-    std::cout << "delete" << std::endl;
+    switch (delete_state) {
+    case DEL_INACTIVE:
+      delete_state = DEL_OPTION;
+      break;
+    case DEL_OPTION:
+      delete_state = DEL_ACK;
+      std::cout << "delete" << std::endl;
+      break;
+    default:
+      std::cerr << "Invalid Program State: " << __FILE__ << ":" << __LINE__;
+    }
     return current_state;
   }
   IState *btn_release_delete() {
-    //std::cout << "play" << std::endl;
+    switch (delete_state) {
+    case DEL_OPTION:
+      delete_state = DEL_INACTIVE;
+      break;
+    case DEL_ACK:
+      delete_state = DEL_OPTION;
+      break;
+    default:
+      std::cerr << "Invalid Program State: " << __FILE__ << ":" << __LINE__;
+    }
     return current_state;
   }
   IState *btn_press_left() {
@@ -154,7 +220,6 @@ protected:
     return current_state;
   }
   IState *btn_release_left() {
-    std::cout << "# todo" << std::endl;
     return current_state;
   }
   IState *btn_press_right() {
@@ -162,7 +227,6 @@ protected:
     return current_state;
   }
   IState *btn_release_right() {
-    std::cout << "# todo" << std::endl;
     return current_state;
   }
   IState *btn_press_prev() {
@@ -170,7 +234,6 @@ protected:
     return current_state;
   }
   IState *btn_release_prev() {
-    std::cout << "# todo" << std::endl;
     return current_state;
   }
   IState *btn_press_next() {
@@ -178,17 +241,81 @@ protected:
     return current_state;
   }
   IState *btn_release_next() {
-    std::cout << "# todo" << std::endl;
+    return current_state;
+  }
+  IState *btn_press_quit() {
+    ++quit_btn_cnt;
+    if (quit_btn_cnt >= quit_btn_min) {
+      keep_running = false;
+      std::cout << "quit" << std::endl;
+    }
+    return current_state;
+  }
+  IState *btn_release_quit() {
+    --quit_btn_cnt;
+    if (quit_btn_cnt < 0)
+      quit_btn_cnt = 0;
     return current_state;
   }
 };
-StateDefault state_default;
+StateDefault state_default_instance;
 
 class StateInitial : public StateDefault {
+protected:
+  // disable marker and delete buttons for StateInitial
+  IState *btn_press_mark() {
+    return current_state;
+  }
+  IState *btn_press_delete() {
+    return current_state;
+  }
+  IState *btn_release_delete() {
+    return current_state;
+  }
 };
-StateInitial state_initial;
+StateInitial state_initial_instance;
 
+class StatePlaying : public StateDefault {
+protected:
+  IState *btn_press_play() {
+    std::cout << "pause" << std::endl;
+    return &state_default;
+  }
+};
+StatePlaying state_playing_instance;
 
+class StateRecordingPlain : public StateDefault {
+  IState *btn_press_play() {
+    return &state_recording_locked;
+  }  
+  IState *btn_release_record() {
+    std::cout << "pause" << std::endl;
+    return &state_default;
+  }
+};
+StateRecordingPlain state_recording_plain_instance;
+
+class StateRecordingLocked : public StateDefault {
+  IState *btn_press_play() {
+    std::cout << "stop" << std::endl;
+    return &state_default;
+  }  
+  IState *btn_press_record() {
+    std::cout << "pause" << std::endl;
+    return current_state;
+  }
+  IState *btn_release_record() {
+    std::cout << "resume" << std::endl;
+    return current_state;
+  }
+};
+StateRecordingLocked state_recording_locked_instance;
+
+IState &state_default = state_default_instance;
+IState &state_initial = state_initial_instance;
+IState &state_playing = state_playing_instance;
+IState &state_recording_plain = state_recording_plain_instance;
+IState &state_recording_locked = state_recording_locked_instance;
 
 IState *current_state = &state_initial;
 
@@ -197,13 +324,18 @@ void axis_nop(Sint16 value) {
   fprintf(stderr, "# nop\n"); // TODO for debugging only -> remove
 }
 
-void speed_axis_motion(Sint16 value) {
+void slow_pb_axis_motion(Sint16 value) {
   double fraction = ((double) value) / 32767;
   printf("%s %f\n", "speed", fraction); 
 }
 
+void fast_pb_axis_motion(Sint16 value) {
+  static const double MAX_PB_SPEED = 16;
+  double fraction = MAX_PB_SPEED * ((double) value) / 32767;
+  printf("%s %f\n", "speed", fraction); 
+}
 
-typedef void (*btn_fct)();
+
 typedef void (*axis_fct)(Sint16 value);
 
 // Button Mapping
@@ -212,13 +344,13 @@ typedef void (*axis_fct)(Sint16 value);
 const eButtons btn_mapping[] = {
   /* 0: A grn*/ BTN_PLAY,
   /* 1: B red*/ BTN_RECORD,
-  /* 2: X blu*/ BTN_DELETE,
-  /* 3: Y ylw*/ BTN_MARK,
-  /* 4: L I  */ BTN_DUMB,
-  /* 5: R I  */ BTN_DUMB,
-  /* 6: back */ BTN_DUMB,
-  /* 7: start*/ BTN_DUMB,
-  /* 8: mode */ BTN_DUMB,
+  /* 2: X blu*/ BTN_MARK,
+  /* 3: Y ylw*/ BTN_RM_MARK,
+  /* 4: L I  */ BTN_DELETE,
+  /* 5: R I  */ BTN_DELETE,
+  /* 6: back */ BTN_QUIT,
+  /* 7: start*/ BTN_QUIT,
+  /* 8: mode */ BTN_QUIT,
   /* 9: anaL */ BTN_DUMB,
   /*10: anaR */ BTN_DUMB,
 };
@@ -228,10 +360,10 @@ const size_t btn_mapping_cnt = sizeof(btn_mapping)/sizeof(btn_mapping[0]);
 // L: Left; R: Right
 // H: Horizontal; V: Vertical
 const axis_fct axis_funcs[] = {
-  /* 0: ALH  */ axis_nop,
+  /* 0: ALH  */ fast_pb_axis_motion,
   /* 1: ALV  */ axis_nop,
   /* 2: L II */ axis_nop,
-  /* 3: ARH  */ speed_axis_motion,
+  /* 3: ARH  */ slow_pb_axis_motion,
   /* 4: ARV  */ axis_nop,
   /* 5: R II */ axis_nop,
 };
@@ -282,7 +414,7 @@ int main(int argc, char *argv[]) {
   fprintf(stderr, "axes: %d\n", SDL_JoystickNumAxes(js));
   fprintf(stderr, "hats: %d\n", SDL_JoystickNumHats(js));
 
-  bool keep_running = true;
+  keep_running = true;
   while(keep_running) {
     SDL_Delay(5);
 
