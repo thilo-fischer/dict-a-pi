@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # -*- coding: utf-8 -*-
 
-# Copyright (c) 2016  Thilo Fischer.
+# Copyright (c) 2016-2017  Thilo Fischer.
 #
 # This file is part of dictapi.
 #
@@ -33,7 +33,7 @@ LATCH_TOLERANCE = 200
 FILE_FORMAT = "mp3"
 
 def dbg(*args)
-  warn args
+  warn "#{DateTime.now.strftime('%H-%M-%S_%L')}: #{args}"
 end
 
 # Audio slice
