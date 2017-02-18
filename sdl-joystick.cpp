@@ -17,95 +17,181 @@
 
 // g++ sdl-joystick.cpp -o sdl-joystick `sdl2-config --libs` `sdl2-config --cflags` && ./sdl-joystick
 
-#include <stdbool.h>
 #include <stdio.h>
 #include <assert.h>
+#include <iostream>
 #include <SDL.h>
 
-enum buttons {
-  B_PLAY,  // cue / playback, pause, lock recording
-  B_REC,   // record
-  B_MARK,  // set marking
-  B_DEL,   // delete
-  B_LEFT,  // jmp previous marker
-  B_RIGHT, // jmp next marker
-  B_UP,    // next slot
-  B_DOWN,  // previous slot
-  B_LAST_ELEMENT
+class IState;
+extern IState *current_state;
+
+enum eButtons {
+  BTN_DUMB,   // not in use
+  BTN_PLAY,   // cue / playback, pause, lock recording
+  BTN_RECORD, // record
+  BTN_MARK,   // set marking
+  BTN_DELETE, // delete
+  BTN_LEFT,   // jmp previous marker
+  BTN_RIGHT,  // jmp next marker
+  BTN_PREV,   // previous slot
+  BTN_NEXT,   // next slot
 };
 
-enum button_state {
-  BS_DOWN, // button press
-  BS_UP,   // button release
+class IState {
+public:
+  virtual IState *process(eButtons button, bool button_press) = 0;
 };
 
-
-struct state;
-
-typedef const struct state *(*state_transition)();
-
-struct state {
-  state_transition transitions[B_LAST_ELEMENT];
+class BaseState : public IState {
+public:
+  /// dispatch to the according member function implemented by the child classes
+  /// @param[in] button_press true if button was pressed down, false if button was released
+  IState *process(eButtons button, bool button_press) {
+    switch (button) {
+    case BTN_DUMB:
+      std::cerr << "Ignoring unused button event." << std::endl;      
+      break;
+    case BTN_PLAY:
+      if (button_press)
+        return btn_press_play();
+      else  
+        return btn_release_play();
+    case BTN_RECORD:
+      if (button_press)
+        return btn_press_record();
+      else  
+        return btn_release_record();
+    case BTN_MARK:
+      if (button_press)
+        return btn_press_mark();
+      else  
+        return btn_release_mark();
+    case BTN_DELETE:
+      if (button_press)
+        return btn_press_delete();
+      else  
+        return btn_release_delete();
+    case BTN_LEFT:
+      if (button_press)
+        return btn_press_left();
+      else  
+        return btn_release_left();
+    case BTN_RIGHT:
+      if (button_press)
+        return btn_press_right();
+      else  
+        return btn_release_right();
+    case BTN_PREV:
+      if (button_press)
+        return btn_press_prev();
+      else  
+        return btn_release_prev();
+    case BTN_NEXT:
+      if (button_press)
+        return btn_press_next();
+      else  
+        return btn_release_next();
+    default:
+      std::cerr << "Unknown button: " << button << std::endl;
+    }
+    return current_state;
+  }
+protected:
+  virtual IState *btn_press_play() = 0;
+  virtual IState *btn_release_play() = 0;
+  virtual IState *btn_press_record() = 0;
+  virtual IState *btn_release_record() = 0;
+  virtual IState *btn_press_mark() = 0;
+  virtual IState *btn_release_mark() = 0;
+  virtual IState *btn_press_delete() = 0;
+  virtual IState *btn_release_delete() = 0;
+  virtual IState *btn_press_left() = 0;
+  virtual IState *btn_release_left() = 0;
+  virtual IState *btn_press_right() = 0;
+  virtual IState *btn_release_right() = 0;
+  virtual IState *btn_press_prev() = 0;
+  virtual IState *btn_release_prev() = 0;
+  virtual IState *btn_press_next() = 0;
+  virtual IState *btn_release_next() = 0;
 };
 
-const struct state *trans_start_playback();
-const struct state *trans_start_record();
-const struct state *trans_set_mark();
-
-const struct state state_initial = {
-  .transitions = {
-    [B_PLAY] = trans_start_playback,
-    [B_REC]  = trans_start_record,
-    [B_MARK] = trans_set_mark,
-    //[B_DEL]  = trans_delete,
+class StateDefault : public BaseState {
+protected:
+  IState *btn_press_play() {
+    std::cout << "play" << std::endl;
+    return current_state;
+  }
+  IState *btn_release_play() {
+    std::cout << "pause" << std::endl;
+    return current_state;
+  }
+  IState *btn_press_record() {
+    std::cout << "record" << std::endl;
+    return current_state;
+  }
+  IState *btn_release_record() {
+    std::cout << "pause" << std::endl;
+    return current_state;
+  }
+  IState *btn_press_mark() {
+    std::cout << "set_marker" << std::endl;
+    return current_state;
+  }
+  IState *btn_release_mark() {
+    //std::cout << "set_marker" << std::endl;
+    return current_state;
+  }
+  IState *btn_press_delete() {
+    std::cout << "delete" << std::endl;
+    return current_state;
+  }
+  IState *btn_release_delete() {
+    //std::cout << "play" << std::endl;
+    return current_state;
+  }
+  IState *btn_press_left() {
+    std::cout << "# todo" << std::endl;
+    return current_state;
+  }
+  IState *btn_release_left() {
+    std::cout << "# todo" << std::endl;
+    return current_state;
+  }
+  IState *btn_press_right() {
+    std::cout << "# todo" << std::endl;
+    return current_state;
+  }
+  IState *btn_release_right() {
+    std::cout << "# todo" << std::endl;
+    return current_state;
+  }
+  IState *btn_press_prev() {
+    std::cout << "# todo" << std::endl;
+    return current_state;
+  }
+  IState *btn_release_prev() {
+    std::cout << "# todo" << std::endl;
+    return current_state;
+  }
+  IState *btn_press_next() {
+    std::cout << "# todo" << std::endl;
+    return current_state;
+  }
+  IState *btn_release_next() {
+    std::cout << "# todo" << std::endl;
+    return current_state;
   }
 };
+StateDefault state_default;
 
-const struct state *current_state = &state_initial;
-
-const struct state *trans_start_playback() {
-  printf("%s\n", "play");
-  return &state_initial;
-}
-
-const struct state *trans_start_record() {
-  printf("%s\n", "record");
-  return &state_initial;
-}
-
-const struct state *trans_set_mark() {
-  printf("%s\n", "set_marker");
-  return current_state;
-}
+class StateInitial : public StateDefault {
+};
+StateInitial state_initial;
 
 
-void btn_nop() {
-  fprintf(stderr, "# nop\n"); // TODO for debugging only -> remove
-}
 
-void rec_btn_dn() {
-  printf("%s\n", "record");
-}
+IState *current_state = &state_initial;
 
-void rec_btn_up() {
-  printf("%s\n", "pause");
-}
-
-void play_btn_dn() {
-  printf("%s\n", "play");
-}
-
-void play_btn_up() {
-  printf("%s\n", "pause");
-}
-
-void mark_btn_dn() {
-  printf("%s\n", "set_marker");
-}
-
-void delete_btn_up() {
-  printf("%s\n", "delete");
-}
 
 void axis_nop(Sint16 value) {
   fprintf(stderr, "# nop\n"); // TODO for debugging only -> remove
@@ -123,35 +209,20 @@ typedef void (*axis_fct)(Sint16 value);
 // Button Mapping
 //  for X-Box 360 pad compatible devices
 
-const btn_fct btn_dn_funcs[] = {
-  /* 0: A grn*/ play_btn_dn,
-  /* 1: B red*/ rec_btn_dn,
-  /* 2: X blu*/ btn_nop,
-  /* 3: Y ylw*/ mark_btn_dn,
-  /* 4: L I  */ btn_nop,
-  /* 5: R I  */ btn_nop,
-  /* 6: back */ btn_nop,
-  /* 7: start*/ btn_nop,
-  /* 8: mode */ btn_nop,
-  /* 9: anaL */ btn_nop,
-  /*10: anaR */ btn_nop,
+const eButtons btn_mapping[] = {
+  /* 0: A grn*/ BTN_PLAY,
+  /* 1: B red*/ BTN_RECORD,
+  /* 2: X blu*/ BTN_DELETE,
+  /* 3: Y ylw*/ BTN_MARK,
+  /* 4: L I  */ BTN_DUMB,
+  /* 5: R I  */ BTN_DUMB,
+  /* 6: back */ BTN_DUMB,
+  /* 7: start*/ BTN_DUMB,
+  /* 8: mode */ BTN_DUMB,
+  /* 9: anaL */ BTN_DUMB,
+  /*10: anaR */ BTN_DUMB,
 };
-const size_t btn_dn_funcs_cnt = sizeof(btn_dn_funcs)/sizeof(btn_dn_funcs[0]);
-
-const btn_fct btn_up_funcs[] = {
-  /* 0: A grn*/ play_btn_up,
-  /* 1: B red*/ rec_btn_up,
-  /* 2: X blu*/ delete_btn_up,
-  /* 3: Y ylw*/ btn_nop,
-  /* 4: L I  */ btn_nop,
-  /* 5: R I  */ btn_nop,
-  /* 6: back */ btn_nop,
-  /* 7: start*/ btn_nop,
-  /* 8: mode */ btn_nop,
-  /* 9: anaL */ btn_nop,
-  /*10: anaR */ btn_nop,
-};
-const size_t btn_up_funcs_cnt = sizeof(btn_up_funcs)/sizeof(btn_up_funcs[0]);
+const size_t btn_mapping_cnt = sizeof(btn_mapping)/sizeof(btn_mapping[0]);
 
 // A: Analog Stick
 // L: Left; R: Right
@@ -166,21 +237,13 @@ const axis_fct axis_funcs[] = {
 };
 const size_t axis_funcs_cnt = sizeof(axis_funcs)/sizeof(axis_funcs[0]);
 
-const btn_fct hat_dn_funcs[] = {
-  /* 1: up  */ btn_nop,
-  /* 2: rgt */ btn_nop,
-  /* 4: dn  */ btn_nop,
-  /* 8: lft */ btn_nop,
+const eButtons hat_mapping[] = {
+  /* 1: up  */ BTN_PREV,
+  /* 2: rgt */ BTN_RIGHT,
+  /* 4: dn  */ BTN_NEXT,
+  /* 8: lft */ BTN_LEFT,
 };
-const size_t hat_dn_funcs_cnt = sizeof(hat_dn_funcs)/sizeof(hat_dn_funcs[0]);
-
-const btn_fct hat_up_funcs[] = {
-  /* 1: up  */ btn_nop,
-  /* 2: rgt */ btn_nop,
-  /* 4: dn  */ btn_nop,
-  /* 8: lft */ btn_nop,
-};
-const size_t hat_up_funcs_cnt = sizeof(hat_up_funcs)/sizeof(hat_up_funcs[0]);
+const size_t hat_mapping_cnt = sizeof(hat_mapping)/sizeof(hat_mapping[0]);
 
 Sint8 hat_state = 0;
 
@@ -234,14 +297,14 @@ int main(int argc, char *argv[]) {
 
       case SDL_JOYBUTTONDOWN:
         fprintf(stderr, "btn DN: %d\n", event.jbutton.button);
-        if (event.jbutton.button < btn_dn_funcs_cnt) {
-          btn_dn_funcs[event.jbutton.button]();
+        if (event.jbutton.button < btn_mapping_cnt) {
+          current_state->process(btn_mapping[event.jbutton.button], true);
         }
         break;
       case SDL_JOYBUTTONUP:
         fprintf(stderr, "btn UP: %d\n", event.jbutton.button);
-        if (event.jbutton.button < btn_up_funcs_cnt) {
-          btn_up_funcs[event.jbutton.button]();
+        if (event.jbutton.button < btn_mapping_cnt) {
+          current_state->process(btn_mapping[event.jbutton.button], false);
         }
         break;
       case SDL_JOYHATMOTION:
@@ -252,10 +315,10 @@ int main(int argc, char *argv[]) {
             if (diff & (1 << i)) {
               if (event.jhat.value & (1 << i)) {
                 fprintf(stderr, "hat btn %d dn\n", i);
-                hat_dn_funcs[i]();
+                current_state->process(hat_mapping[i], true);
               } else {
                 fprintf(stderr, "hat btn %d up\n", i);
-                hat_up_funcs[i]();
+                current_state->process(hat_mapping[i], false);
               }   
             }
           }
