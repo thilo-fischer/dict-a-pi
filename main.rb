@@ -26,6 +26,9 @@
 require 'singleton'
 require 'date'
 
+# path where to store recorded audio files
+AUDIO_DIR = "."
+
 # time in milliseconds allowed to round to get to audio slice edges or markers
 LATCH_TOLERANCE = 200
 
@@ -122,6 +125,33 @@ class ASlice
     m = Marker.new(offset)
     @markers << m
   end
+  def find_marker(offset)
+    result = {}
+    return result if @markes.empty?
+    geq_idx = @markers.find_index {|m| m.offset >= offset-LATCH_TOLERANCE}
+    if geq_idx
+      geq = @markers[geq_idx]
+      if geq.offset >= offset-LATCH_TOLERANCE and geq.offset <= offset+LATCH_TOLERANCE
+        result[:accurate] = geq
+        result[:previous] = @markers[geq_idx - 1] if geq_idx - 1 >= 0
+        result[:next    ] = @markers[geq_idx + 1] if geq_idx + 1 <  @markers.length
+        return result
+      #elsif geq.offset < offset
+      #  raise "programming error" # => should never get here ...
+      #  result[:previous] = geq
+      #  result[:next    ] = @markers[geq_idx + 1] if geq_idx + 1 <  @markers.length
+      #  return result
+      elsif geq.offset > offset
+        result[:previous] = @markers[geq_idx - 1] if geq_idx - 1 >= 0
+        result[:next    ] = geq
+        return result
+      else
+        raise "programming error"
+      end
+    else
+      result[:previous] = @markes.first
+    end
+  end
   def update_duration
     `soxi '#{file}'`.lines.find {|l| l =~ /^Duration\s*:\s*(\d+):(\d\d):(\d\d).(\d+)/}
     @duration = (($1.to_i * 60 + $2.to_i) * 60 + $3.to_i) * 1000 + ($4 + "000")[0..2].to_i
@@ -201,8 +231,6 @@ class Position
   end
 end # class Position
 
-AUDIO_DIR = "."
-
 class StateMachineContext
   attr_accessor :fork, :pipe, :speed, :pos
   def initialize
@@ -220,16 +248,32 @@ end # class StateMachineContext
 class StateBase; end
 class StateInitial < StateBase; end
 
+##
+# Not a State the state machine should ever enter. Base class that
+# implements the methods that provide the actual operations to be used
+# by the chlid classes that implement the actual states.  This would
+# be an abstract class if one could have abstact classes in Ruby.
 class StateBase
   
-  #def method_missingXXX(method_name)
-  #  warn "no such method: #{method_name}"
-  #end
-  
-  def reset(ctx)
-    ctx.reset
-    StateInitial.instance
+  def method_missing(method_name, *args)
+    warn "invalid operation `#{method_name}' for current state `#{self}'"
+    self
   end
+  
+  # methods to be implemented by child classes:
+  # play
+  # record
+  # pause
+  # resume
+  # stop
+  # speed
+  # seek
+  # seek_marker
+  # set_marker
+  # rm_marker
+  # delete
+  # reset
+  # load
 
   private
   # helper methods
@@ -247,7 +291,7 @@ class StateBase
     record_command(:record, file)
   end
   def stop_recorder(ctx)
-    warn ctx.pipe.pid.inspect
+    dbg "stop recorder with PID #{ctx.pipe.pid.inspect}"
     Process.kill("SIGINT", ctx.pipe.pid)
 
     file = ctx.pos.slice.file
@@ -331,21 +375,24 @@ class StateBase
     ctx.pipe << 'pause'
   end
   def speed_player(ctx, amount)
-    if amount.abs < 0.01
-      pause_player(ctx)
-      ctx.speed = amount
-      return
+    if (ctx.pipe)
+      if amount.abs < 0.1
+        pause_player(ctx)
+        ctx.speed = amount
+        return
+      end
+      # change playback direction if speed changes from negative to positive value or vice verse
+      if amount > 0 and ctx.speed <= 0
+        stop_player(ctx)
+        run_player(ctx)
+      elsif amount < 0 and ctx.speed >= 0
+        stop_player(ctx)
+        run_player(ctx, :reverse)
+      else
+        resume_player(ctx)
+      end
+      ctx.pipe << "speed_set #{amount.abs}"
     end
-    if amount > 0 and ctx.speed <= 0
-      stop_player(ctx)
-      run_player(ctx)
-    elsif amount < 0 and ctx.speed >= 0
-      stop_player(ctx)
-      run_player(ctx, :reverse)
-    else
-      resume_player(ctx)
-    end
-    ctx.pipe << "speed_set #{amount.abs}"
     ctx.speed = amount
   end
   def reverse_filename(filename)
@@ -353,6 +400,9 @@ class StateBase
   end
 end # class StateBase
 
+##
+# System starts in this state and enters this state after every
+# loading of another file.
 class StateInitial < StateBase
   include Singleton
   def record(ctx)
@@ -375,111 +425,12 @@ class StateInitial < StateBase
     end
     state_stopped
   end
+  def reset(ctx)
+    self
+  end
 end # class StateInitial
 
-class StateRecording < StateBase
-  include Singleton
-  def pause(ctx)
-    pause_recorder(ctx)
-    StateRecordingPause.instance
-  end
-  def stop(ctx)
-    stop_recorder(ctx)
-    StateStopped.instance
-  end
-  def reset(ctx)
-    stop_recorder(ctx)
-    StateInitial.instance
-  end
-end # class StateRecording
-
-class StateRecordingPause < StateBase
-  include Singleton
-  def resume(ctx)
-    resume_recorder(ctx)
-    StateRecording.instance
-  end
-  def stop(ctx)
-    stop_recorder(ctx)
-    StateStopped.instance
-  end
-  def reset(ctx)
-    stop_recorder(ctx)
-    StateInitial.instance
-  end
-end # class StateRecordingPause
-
-class StatePlaying < StateBase
-  include Singleton
-  def pause(ctx)
-    pause_player(ctx)
-    StatePlayingPause.instance
-  end
-  def stop(ctx)
-    stop_player(ctx)
-    StateStopped.instance
-  end
-  def reset(ctx)
-    stop_player(ctx)
-    StateInitial.instance
-  end
-  def speed(ctx, arg, mode = :absolute)
-    case arg
-    when String
-      case arg
-      when /^+(.*)$/
-        mode = :increase
-      when /^-(.*)$/
-        mode = :decrease
-      else
-        mode = :absolute
-      end
-      amount = $1 # XXX
-      case arg
-      when /^(\d+\.?\d*)%$/
-        amount = $1.to_i * 0.01
-      when /^\d+\.?|\d*\.\d+$/
-        amount = $1.to_f
-      else
-        warn "invalid speed argument"
-      end
-    when Number
-      amount = arg
-    else
-      warn "invalid argument"
-      return
-    end
-    amount = case mode
-             when :increase
-               ctx.speed + amount
-             when :decrease
-               ctx.speed - amount
-             when :absolute
-               amount
-             else
-               raise
-             end
-    speed_player(ctx, amount)
-  end
-end # class StatePlaying
-
-class StatePlayingPause < StateBase
-  include Singleton
-  def resume(ctx)
-    resume_player(ctx)
-    StatePlaying.instance
-  end
-  def stop(ctx)
-    stop_player(ctx)
-    StateStopped.instance
-  end
-  def reset(ctx)
-    stop_player(ctx)
-    StateInitial.instance
-  end
-end # class StatePlayingPause
-
-class StateStopped < StateBase
+class StateDefault < StateBase
   include Singleton
   def play(ctx)
     run_player(ctx)
@@ -489,19 +440,132 @@ class StateStopped < StateBase
     run_recorder(ctx)
     StateRecording.instance
   end
+  # missing methods invalid for this state:
+  # pause
+  # resume
+  # stop
+  def speed(ctx, value, mode = :absolute)
+    abs_value = case mode
+                when :relative
+                  ctx.speed + value
+                when :absolute
+                  value
+                else
+                  raise
+                end
+    speed_player(ctx, value)
+  end
+  def seek(ctx, position, mode = :absolute)
+    new_state = stop(ctx)
+    abs_pos = case mode
+              when :absolute
+                position
+              when :relative
+                ctx.pos.timecode + position
+              when :end_offset
+                raise "not yet implemented"
+              else
+                raise "programming error"
+              end
+    ctx.pos.seek(abs_pos)
+    new_state
+  end
+  # If count is > 0, seek to position of count'th next marker.
+  # If count is < 0, seek to position of count'th previous marker.
+  # If count is == 0, seek to position of nearest marker.
+  def seek_marker(ctx, count)
+    pos = ctx.pos
+
+    raise "programming error" if pos.timecode < pos.slice_begin or pos.timecode >= pos.slice_end
+
+    slice_marks = pos.slice.find_marker(pos.offset)
+
+    if count == 0 and slice_marks.key?(:accurate)
+      return seek(ctx, pos.slice_begin + slice_marks[:accurate].offset)
+    end
+
+    prev_mark = nil
+    prev_mark_timecode = nil
+    prev_mark_slice = pos.slice
+    prev_mark_slice_begin = pos.slice_begin
+    if count <= 0
+      if slice_marks.key?(:prev)
+        prev_mark = slice_marks(:prev)
+      else
+        while prev_mark == nil do
+          prev_mark_slice = @prev_mark_slice.predecessor
+          break if prev_mark_slice == nil
+          prev_mark_slice_begin -= prev_mark_slice.duration
+          prev_mark = prev_mark_slice.markers.last unless prev_mark_slice.markers.empty?
+        end
+      end
+    end
+    prev_mark_timecode = prev_mark_slice_begin + prev_mark.offset if prev_mark
+
+    next_mark = nil
+    next_mark_timecode = nil
+    next_mark_slice = pos.slice
+    next_mark_slice_begin = pos.slice_begin
+    if count >= 0
+      if slice_marks.key?(:next)
+        next_mark = slice_marks(:next)
+      else
+        while next_mark == nil do
+          next_mark_slice_begin += next_mark_slice.duration
+          next_mark_slice = @next_mark_slice.successor
+          break if next_mark_slice == nil
+          next_mark = next_mark_slice.markers.first unless next_mark_slice.markers.empty?
+        end
+      end
+    end
+    next_mark_timecode = next_mark_slice_begin + next_mark.offset if next_mark
+
+    if count == 0
+      if prev_mark
+        if next_mark
+          if pos.timecode - prev_mark_timecode <= next_mark_timecode - pos.timecode
+            return seek(ctx, prev_mark_timecode)
+          else
+            return seek(ctx, next_mark_timecode)
+          end
+        else
+          return seek(ctx, prev_mark_timecode)
+        end
+      else
+        if next_mark
+          return seek(ctx, next_mark_timecode)
+        else
+          warn "seek_marker failed, no marker found"
+          return self
+        end
+      end
+    elsif count > 0
+      if next_mark
+        # FIXME allow to seek over more than just one marker
+        return seek(ctx, next_mark_timecode)
+      else
+        return seek(ctx, 0, :end_offset)
+      end
+    elsif count < 0
+      if prev_mark
+        # FIXME allow to seek over more than just one marker
+        return seek(ctx, prev_mark_timecode)
+      else
+        return seek(ctx, 0, :absolute)
+      end      
+    else
+      raise "programming error"
+    end
+    self
+  end # def seek_marker
   def set_marker(ctx, *args)
     # TODO args
     ctx.pos.slice.set_marker(ctx.pos.offset)
+    self
   end
-  def load(ctx, slice_filename)
-    new_slice = ASlice.new(slice_filename)
-    new_slice.update_duration
-    ctx.pos.slice.insert(ctx.pos.offset, new_slice)
-    return self
-  end
-  def seek(ctx, timecode)
-    ctx.pos.seek(timecode)
-    return self
+  def rm_marker(ctx, *args)
+    warn "TODO not yet implemented"
+    self
   end
   def delete(ctx, *args)
     # TODO
@@ -516,40 +580,212 @@ class StateStopped < StateBase
     #  slice.delete(from_marker.offset, to_marker.offset)
     #end
   end
+  def reset(ctx)
+    ctx.reset
+    StateInitial.instance
+  end
+end # class StateDefault
+
+class StatePlaying < StateDefault
+  include Singleton
+  def play(ctx)
+    self
+  end
+  def record(ctx)
+    stop(ctx).record(ctx)
+  end
+  def pause(ctx)
+    pause_player(ctx)
+    StatePlayingPause.instance
+  end
+  def stop(ctx)
+    stop_player(ctx)
+    StateStopped.instance
+  end
+  def seek(ctx, *args)
+    # TODO args
+    pause_player(ctx)
+    super
+    resume_player(ctx)
+    self
+  end
+  def seek_marker(ctx, count)
+    # TODO args
+    pause_player(ctx)
+    super
+    resume_player(ctx)
+    self
+  end
+  def set_marker(ctx, *args)
+    # TODO args
+    pause_player(ctx)
+    super
+    resume_player(ctx)
+    self
+  end
+  def delete(ctx)
+    stop(ctx).delete(ctx)
+  end
+  def reset(ctx)
+    stop_player(ctx)
+    super
+  end
+end # class StatePlaying
+
+class StatePlayingPause < StateDefault
+  include Singleton
+  def play(ctx)
+    resume_player(ctx)
+    StatePlaying.instance
+  end
+  def record(ctx)
+    stop(ctx).record(ctx)
+  end
+  def pause(ctx)
+    return self
+  end
+  def resume(ctx)
+    resume_player(ctx)
+    StatePlaying.instance
+  end
+  def stop(ctx)
+    stop_player(ctx)
+    StateStopped.instance
+  end
+  def delete(ctx)
+    stop(ctx).delete(ctx)
+  end
+  def reset(ctx)
+    stop_player(ctx)
+    super
+  end
+end # class StatePlayingPause
+
+class StateRecording < StateDefault
+  include Singleton
+  def play(ctx)
+    stop(ctx).play(ctx)
+  end
+  def record(ctx)
+    self
+  end
+  def pause(ctx)
+    pause_recorder(ctx)
+    StateRecordingPause.instance
+  end
+  def stop(ctx)
+    stop_recorder(ctx)
+    StateStopped.instance
+  end
+  def set_marker(ctx, *args)
+    warn "TODO not yet implemented"
+    #ctx.pos.slice.set_marker(ctx.pos.offset)
+    self
+  end
+  def delete(ctx)
+    stop(ctx).delete(ctx)
+  end
+  def reset(ctx)
+    stop_recorder(ctx)
+    super
+  end
+end # class StateRecording
+
+class StateRecordingPause < StateDefault
+  include Singleton
+  def play(ctx)
+    stop(ctx).play(ctx)
+  end
+  def record(ctx)
+    resume_recorder(ctx)
+    StateRecording.instance
+  end
+  def pause(ctx)
+    self
+  end
+  def resume(ctx)
+    resume_recorder(ctx)
+    StateRecording.instance
+  end
+  def stop(ctx)
+    stop_recorder(ctx)
+    StateStopped.instance
+  end
+  def delete(ctx)
+    stop(ctx).delete(ctx)
+  end
+  def reset(ctx)
+    stop_recorder(ctx)
+    super
+  end
+end # class StateRecordingPause
+
+class StateStopped < StateDefault
+  include Singleton
+  def stop(ctx)
+    return self
+  end
+  def load(ctx, slice_filename)
+    new_slice = ASlice.new(slice_filename)
+    new_slice.update_duration
+    ctx.pos.slice.insert(ctx.pos.offset, new_slice)
+    return self
+  end
 end
 
-context = StateMachineContext.new
-state = StateInitial.instance
+@context = StateMachineContext.new
+@state = StateInitial.instance
+@keep_running = true
 
-keep_running = true
-
-while keep_running
-  cmd = STDIN.gets
+def process(cmd)
   case cmd
   when /^\s*(#.*)?$/
     # comment => ignore
   when /^quit$/
-    state = state.reset(context)
-    keep_running = false
+    @state = @state.reset(@context)
+    @keep_running = false
+  when /^open (.*)$/
+    cmds = File.open($1).readlines()
+    cmds.each {|c| process(c)}
   when /^load (.*)$/
-    state = state.reset(context)
-    state = state.load(context, $1)
+    @state = @state.reset(@context)
+    @state = @state.load(@context, $1)
   when /^record$/
-    state = state.record(context)
+    @state = @state.record(@context)
   when /delete( (.*))?/
     # TODO: optional arguments
-    state = state.delete(context, $1)
+    @state = @state.delete(@context, $1)
   when /^play$/
-    state = state.play(context)
+    @state = @state.play(@context)
   when /^stop$/
-    state = state.stop(context)
+    @state = @state.stop(@context)
   when /^pause$/
-    state = state.pause(context)
+    @state = @state.pause(@context)
   when /^resume$/
-    state = state.resume(context)
-  when /^speed (.*)$/
-    state = state.speed(context, $1)
-#  when /seek (.*)/
+    @state = @state.resume(@context)
+  when /^speed (play|stop)? (abs|rel) (.*)$/
+    case $1
+    when "play"
+      @state = @state.play(@context)
+    when "stop"
+      @state = @state.stop(@context)
+    when ""
+      nil
+    else
+      raise "programming error"
+    end
+    case $2
+    when "abs"
+      mode = :absolute
+    when "rel"
+      mode = :relative
+    else
+      raise "programming error"
+    end
+    value = $3.to_f
+    @state = @state.speed(@context, value, mode)
+      
+#  when /^seek (.*)$/
 #    arg = $1
 #    case arg
 #    when /^[+\-](.*)$/
@@ -572,13 +808,20 @@ while keep_running
 #    else
 #      warn "invalid speed argument"
 #    end
-#    state = state.seek(amount, mode)
+#    @state = @state.seek(amount, mode)
     
-  when /set_marker( (.*))?/
-    state = state.set_marker(context, $1)
-  when /rm_marker( (.*))?/
+  when /^set_marker( (.*))?$/
+    @state = @state.set_marker(@context, $1)
+  when /^seek_marker [+\-]?(\d+)$/
+    @state = @state.seek_marker(@context, $1.to_i)
+  when /^rm_marker( (.*))?$/
     raise "not yet supported"
   else
     warn "unknown command: `#{cmd.chomp}'"
   end
+end
+
+while @keep_running
+  cmd = STDIN.gets
+  process(cmd)
 end
