@@ -295,17 +295,25 @@ class StateRecordingPlain : public StateDefault {
 };
 StateRecordingPlain state_recording_plain_instance;
 
+bool locked_rec_paused = false; ///< to not resume when buttons from activating locked record get relased -- TODO does not properly catch the case when state is being left because of another button press while rec button is still pressed. Introduce state enter and leave hooks?
 class StateRecordingLocked : public StateDefault {
   IState *btn_press_play() {
     std::cout << "stop" << std::endl;
     return &state_default;
   }  
+  IState *btn_release_play() {
+    return current_state;
+  }  
   IState *btn_press_record() {
     std::cout << "pause" << std::endl;
+    locked_rec_paused = true;
     return current_state;
   }
   IState *btn_release_record() {
-    std::cout << "resume" << std::endl;
+    if (locked_rec_paused) {
+      std::cout << "resume" << std::endl;
+      locked_rec_paused = false;
+    }
     return current_state;
   }
 };
@@ -324,15 +332,36 @@ void axis_nop(Sint16 value) {
   fprintf(stderr, "> # nop\n"); // TODO for debugging only -> remove
 }
 
-void slow_pb_axis_motion(Sint16 value) {
-  double fraction = ((double) value) / 32767;
-  printf("%s %f\n", "speed", fraction); 
+// value when moving the stick to max right or max bottom
+const int MAX_AXIS_VALUE =  32767;
+// value when moving the stick to max left or max top
+const int MIN_AXIS_VALUE = -32768;
+
+double playback_speed_base = 0.;
+double playback_speed_modify = 1.;
+
+void update_playback_speed() {
+  std::cout << "speed play abs "
+            << (playback_speed_base * playback_speed_modify)
+            << std::endl;
 }
 
-void fast_pb_axis_motion(Sint16 value) {
-  static const double MAX_PB_SPEED = 16;
-  double fraction = MAX_PB_SPEED * ((double) value) / 32767;
-  printf("%s %f\n", "speed", fraction); 
+void playback_axis_motion(Sint16 value) {
+  playback_speed_base = ((double) value) / MAX_AXIS_VALUE;
+  update_playback_speed();
+}
+
+void speed_axis_motion(Sint16 value) {
+  static const double MAX_SPEED_FACTOR = 16;
+  static const double MIN_SPEED_FACTOR = 0.25;
+  if (value > 0) {
+    playback_speed_modify = ((double) value) / MAX_AXIS_VALUE * MAX_SPEED_FACTOR;
+  } else if (value < 0) {
+    playback_speed_modify = ((double) value) / MIN_AXIS_VALUE * MIN_SPEED_FACTOR;
+  } else {
+    playback_speed_modify = 1.;
+  }
+  update_playback_speed();
 }
 
 
@@ -360,11 +389,11 @@ const size_t btn_mapping_cnt = sizeof(btn_mapping)/sizeof(btn_mapping[0]);
 // L: Left; R: Right
 // H: Horizontal; V: Vertical
 const axis_fct axis_funcs[] = {
-  /* 0: ALH  */ fast_pb_axis_motion,
+  /* 0: ALH  */ axis_nop,
   /* 1: ALV  */ axis_nop,
   /* 2: L II */ axis_nop,
-  /* 3: ARH  */ slow_pb_axis_motion,
-  /* 4: ARV  */ axis_nop,
+  /* 3: ARH  */ playback_axis_motion,
+  /* 4: ARV  */ speed_axis_motion,
   /* 5: R II */ axis_nop,
 };
 const size_t axis_funcs_cnt = sizeof(axis_funcs)/sizeof(axis_funcs[0]);
@@ -383,6 +412,9 @@ int main(int argc, char *argv[]) {
   // SDL2 will only report events when the window has focus, so set
   // this hint as we don't have a window
   //SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+
+  //std::cout << std::fixed;
+  std::cout.flags(std::ios::fixed);
 
   if (SDL_Init(SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER) < 0) {
     fprintf(stderr, "> Unable to initialize SDL joystick/gamecontroller subsystem: %s\n", SDL_GetError());

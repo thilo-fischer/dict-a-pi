@@ -127,7 +127,7 @@ class ASlice
   end
   def find_marker(offset)
     result = {}
-    return result if @markes.empty?
+    return result if @markers.empty?
     geq_idx = @markers.find_index {|m| m.offset >= offset-LATCH_TOLERANCE}
     if geq_idx
       geq = @markers[geq_idx]
@@ -476,7 +476,7 @@ class StateDefault < StateBase
   def seek_marker(ctx, count)
     pos = ctx.pos
 
-    raise "programming error" if pos.timecode < pos.slice_begin or pos.timecode >= pos.slice_end
+    raise "programming error" if pos.timecode < pos.slice_begin or pos.timecode > pos.slice_end
 
     slice_marks = pos.slice.find_marker(pos.offset)
 
