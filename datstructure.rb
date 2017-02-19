@@ -164,17 +164,25 @@ class Position
     @offset = @slice.duration
     @timecode += @offset
   end
-  def next_slice?
+  ##
+  # whether the current slice has a predecessor
+  def prev_slice?
     @slice.predecessor
   end
+  ##
+  # whether the current slice has a successor
   def next_slice?
     @slice.successor
   end
+  ##
+  # set +self+ to refer to the beginning of the previous slice
   def go_prev_slice
     go_slice_begin
     @slice = @slice.predecessor
     @timecode -= @slice.duration
   end
+  ##
+  # set +self+ to refer to the beginning of the following slice
   def go_next_slice
     go_slice_begin
     @slice = @slice.successor
@@ -201,7 +209,21 @@ class Position
         @timecode = target_timecode
       end
     end
-    return @timecode
+    @timecode
+  end
+  def seek_end(offset)
+    go_next_slice while next_slice?
+    while @slice.duration < offset
+      offset -= @slice.duration
+      if prev_slice?
+        go_prev_slice
+      else
+        # +self+ now refers to the beginnig of the first slice
+        return @timecode
+      end
+    end
+    @offset = @slice.duration - offset
+    @timecode += @offset
   end
 end # class Position
 

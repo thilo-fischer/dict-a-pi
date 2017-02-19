@@ -113,7 +113,9 @@ class StateBase
     end
     Thread.new do
       while true
-        ctx.pipe = open("|mplayer -slave -quiet -af scaletempo -ss #{start_offset} -endpos #{ctx.pos.slice.duration} '#{file}'")
+        cmdline = "|mplayer -slave -quiet -af scaletempo -ss #{start_offset} -endpos #{ctx.pos.slice.duration} '#{file}'"
+        dbg("call `#{cmdline}'")
+        ctx.pipe = open(cmdline)
         if direction == :forward
           ctx.pos.go_slice_end
           if ctx.pos.slice.next_slice?
@@ -244,17 +246,16 @@ class StateDefault < StateBase
   end
   def seek(ctx, position, mode = :absolute)
     new_state = stop(ctx)
-    abs_pos = case mode
-              when :absolute
-                position
-              when :relative
-                ctx.pos.timecode + position
-              when :end_offset
-                raise "not yet implemented"
-              else
-                raise "programming error"
-              end
-    ctx.pos.seek(abs_pos)
+    case mode
+    when :absolute
+      ctx.pos.seek(position)
+    when :relative
+      ctx.pos.seek(ctx.pos.timecode + position)
+    when :end_offset
+      ctx.pos.seek_end(position)
+    else
+      raise "programming error"
+    end
     new_state
   end
   # If count is > 0, seek to position of count'th next marker.
@@ -280,7 +281,7 @@ class StateDefault < StateBase
         prev_mark = slice_marks(:prev)
       else
         while prev_mark == nil do
-          prev_mark_slice = @prev_mark_slice.predecessor
+          prev_mark_slice = prev_mark_slice.predecessor
           break if prev_mark_slice == nil
           prev_mark_slice_begin -= prev_mark_slice.duration
           prev_mark = prev_mark_slice.markers.last unless prev_mark_slice.markers.empty?
@@ -299,7 +300,7 @@ class StateDefault < StateBase
       else
         while next_mark == nil do
           next_mark_slice_begin += next_mark_slice.duration
-          next_mark_slice = @next_mark_slice.successor
+          next_mark_slice = next_mark_slice.successor
           break if next_mark_slice == nil
           next_mark = next_mark_slice.markers.first unless next_mark_slice.markers.empty?
         end

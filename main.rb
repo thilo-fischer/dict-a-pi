@@ -37,6 +37,7 @@ LATCH_TOLERANCE = 200
 
 # must be file extension recognized by sox
 FILE_FORMAT = "mp3"
+#FILE_FORMAT = "wav"
 
 def dbg(*args)
   warn "#{DateTime.now.strftime('%H-%M-%S_%L')}: #{args}"
@@ -47,6 +48,7 @@ end
 @keep_running = true
 
 def process(cmd)
+  dbg("processing `#{cmd}'")
   case cmd
   when /^\s*(#.*)?$/
     # comment => ignore
@@ -55,7 +57,7 @@ def process(cmd)
     @keep_running = false
   when /^open (.*)$/
     cmds = File.open($1).readlines()
-    cmds.each {|c| process(c)}
+    cmds.each {|c| process(c.chomp)}
   when /^load (.*)$/
     @state = @state.reset(@context)
     @state = @state.load(@context, $1)
@@ -121,16 +123,18 @@ def process(cmd)
     
   when /^set_marker( (.*))?$/
     @state = @state.set_marker(@context, $1)
-  when /^seek_marker [+\-]?(\d+)$/
+  when /^seek_marker ([+\-]?\d+)$/
     @state = @state.seek_marker(@context, $1.to_i)
   when /^rm_marker( (.*))?$/
     raise "not yet supported"
   else
     warn "unknown command: `#{cmd.chomp}'"
   end
+
+  dbg(@context.pos.inspect)
 end
 
 while @keep_running
-  cmd = STDIN.gets
+  cmd = STDIN.gets.chomp
   process(cmd)
 end
