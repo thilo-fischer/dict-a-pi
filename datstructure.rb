@@ -37,16 +37,20 @@ class ASlice
       slice.predecessor = @predecessor
       slice.successor = self
       @predecessor = slice
+      0
     when LATCH_TOLERANCE..(duration-LATCH_TOLERANCE)
       split(offset)
       insert(offset, slice)
+      offset
     when (duration-LATCH_TOLERANCE)..duration
       @successor.predecessor = slice if @successor
       slice.successor = @successor
       slice.predecessor = self
       @successor = slice
+      duration
     else
       warn "invalid offset: #{offset}"
+      nil
     end
   end # def insert
   # remove region from offset from (inclusive)
@@ -146,7 +150,7 @@ class Position
   def initialize
     @timecode = 0
     @slice = nil
-    @offset = nil
+    @offset = 0
   end
   # timecode of beginning of current slice
   def slice_begin
@@ -186,27 +190,27 @@ class Position
   # set +self+ to refer to the beginning of the following slice
   def go_next_slice
     go_slice_begin
-    @slice = @slice.successor
     @timecode += @slice.duration
+    @slice = @slice.successor
   end
   def seek(target_timecode)
     while target_timecode != @timecode
-      #dbg("seek from #{@timecode} to #{target_timecode}; slice: #{slice_begin}...#{slice_end}; prev_silce?:#{prev_slice??true:false}; next_slice?:#{next_slice??true:false}")
+      dbg("seek from #{@timecode} to #{target_timecode}; slice: #{@slice.file[19..24]} [#{slice_begin}...#{slice_end}); prev_silce?:#{prev_slice??true:false}; next_slice?:#{next_slice??true:false}")
       if target_timecode < slice_begin
         if prev_slice?
-          #dbg("seek from #{@timecode} to #{target_timecode} => go_prev_slice")
+          dbg("seek from #{@timecode} to #{target_timecode} => go_prev_slice")
           go_prev_slice
         else
-          #dbg("seek from #{@timecode} to #{target_timecode} => go_slice_begin")
+          dbg("seek from #{@timecode} to #{target_timecode} => go_slice_begin")
           go_slice_begin
           break
         end
       elsif target_timecode >= slice_end
         if next_slice?
-          #dbg("seek from #{@timecode} to #{target_timecode} => go_next_slice")
+          dbg("seek from #{@timecode} to #{target_timecode} => go_next_slice")
           go_next_slice
         else
-          #dbg("seek from #{@timecode} to #{target_timecode} => go_slice_end")
+          dbg("seek from #{@timecode} to #{target_timecode} => go_slice_end")
           go_slice_end
           break
         end

@@ -43,7 +43,7 @@ class StateInitial < StateBase; end
 class StateBase
   
   def method_missing(method_name, *args)
-    warn "invalid operation `#{method_name}' for current state `#{self}'"
+    warn "invalid operation `#{method_name}' for current state `#{self.class.name}'"
     self
   end
   
@@ -60,7 +60,8 @@ class StateBase
   # rm_marker
   # delete
   # reset
-  # load
+  # open (only InitialState)
+  # load (only StoppedState)
 
   private
   # helper methods
@@ -71,9 +72,13 @@ class StateBase
   def run_recorder(ctx)
     file = File.join(AUDIO_DIR, "#{DateTime.now.strftime('%Y-%m-%d_%H-%M-%S_%L_%z')}.#{FILE_FORMAT}")
     new_slice = ASlice.new(file)
-    ctx.pos.slice.insert(ctx.pos.offset, new_slice) if ctx.pos.slice
+    if ctx.pos.slice
+      latched_offset = ctx.pos.slice.insert(ctx.pos.offset, new_slice)
+      ctx.pos.timecode += latched_offset - ctx.pos.offset
+    end
     ctx.pos.slice = new_slice
     ctx.pos.offset = 0
+    dbg_dump_slices(ctx.pos.slice)
     ctx.pipe = IO.popen("rec '#{file}'", "r+")
     record_command(:load, file)
   end
@@ -113,7 +118,7 @@ class StateBase
     end
     Thread.new do
       while true
-        cmdline = "|mplayer -slave -quiet -af scaletempo -ss #{start_offset} -endpos #{ctx.pos.slice.duration} '#{file}'"
+        cmdline = "|mplayer -slave -quiet -af scaletempo -ss #{start_offset/1000.0} -endpos #{ctx.pos.slice.duration/1000.0} '#{file}'"
         dbg("call `#{cmdline}'")
         ctx.pipe = open(cmdline)
         if direction == :forward
@@ -200,19 +205,26 @@ class StateInitial < StateBase
   end
   def open(ctx, record_filename)
     state_stopped = StateStopped.instance
-    open(record_filename, "r") do |f|
+    File.open(record_filename, "r") do |f|
       while l = f.gets
         case l
-        when /^((.*)\w*>)?\w*load\w+(.*)$/
-          state_stopped.load($1)
-        when /^((.*)\w*>)?\w*seek\w+(.*)$/
-          state_stopped.seek($1)
+        when /^((.*)\s*>)?\s*load\s+(.*)$/
+          # timestamp = $1
+          state_stopped.load(ctx, $3)
+        when /^((.*)\s*>)?\s*seek\s+(.*)$/
+          # timestamp = $1
+          state_stopped.seek(ctx, $3.to_i)
         else
           warn "ignoring line `#{l.chomp}'"
         end
       end
     end
-    state_stopped
+    if ctx.pos.slice
+      # looks like at least some of the open was successful
+      state_stopped
+    else
+      self
+    end
   end
   def reset(ctx)
     self
@@ -517,7 +529,16 @@ class StateStopped < StateDefault
   def load(ctx, slice_filename)
     new_slice = ASlice.new(slice_filename)
     new_slice.update_duration
-    ctx.pos.slice.insert(ctx.pos.offset, new_slice)
+    # XXX >> redundant to run_recorder
+    if ctx.pos.slice
+      latched_offset = ctx.pos.slice.insert(ctx.pos.offset, new_slice)
+      ctx.pos.timecode += latched_offset - ctx.pos.offset
+    end
+    ctx.pos.slice = new_slice
+    ctx.pos.offset = 0
+    dbg_dump_slices(ctx.pos.slice)
+    # << XXX
+    record_command(:load, slice_filename)
     return self
   end
 end

@@ -43,6 +43,26 @@ def dbg(*args)
   warn "#{DateTime.now.strftime('%H-%M-%S_%L')}: #{args}"
 end
 
+def dbg_dump_position(pos)
+  if pos.slice
+    dbg("Position: #{pos.timecode} / #{pos.slice.file} @ #{pos.slice.offset} + #{pos.offset}")
+  else
+    dbg("Position: #{pos.timecode} / #{pos.offset}")
+  end
+end
+
+def dbg_dump_slices(slice)
+  while slice.predecessor
+    slice = slice.predecessor
+  end
+  timecode = 0
+  while slice
+    warn "#{DateTime.now.strftime('%H-%M-%S_%L')}: @#{"% 5d" % timecode}: #{slice.file} (#{"% 5d" % slice.duration}) => [#{timecode}...#{timecode + slice.duration})"
+    timecode += slice.duration
+    slice = slice.successor
+  end
+end
+
 @context = StateMachineContext.new
 @state = StateInitial.instance
 @keep_running = true
@@ -145,7 +165,7 @@ def process(cmd)
     
   end
 
-  dbg("Position: #{@context.pos.timecode} / #{@context.pos.slice.file} @ #{@context.pos.slice.offset} + #{@context.pos.offset}")
+  dbg_dump_position(@context.pos)
 end
 
 while @keep_running
