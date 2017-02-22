@@ -66,7 +66,7 @@ class StateBase
   # helper methods
   # XXX move to separate class or to module? (If moving to module: make classes including the module implicitly include +Singleton+??)
   def record_command(cmd, *args)
-    puts "#{cmd} (#{args.join(', ')})"
+    puts "#{cmd} #{args.join(', ')}"
   end
   def run_recorder(ctx)
     file = File.join(AUDIO_DIR, "#{DateTime.now.strftime('%Y-%m-%d_%H-%M-%S_%L_%z')}.#{FILE_FORMAT}")
@@ -75,7 +75,7 @@ class StateBase
     ctx.pos.slice = new_slice
     ctx.pos.offset = 0
     ctx.pipe = IO.popen("rec '#{file}'", "r+")
-    record_command(:record, file)
+    record_command(:load, file)
   end
   def stop_recorder(ctx)
     dbg "stop recorder with PID #{ctx.pipe.pid.inspect}"
@@ -198,14 +198,14 @@ class StateInitial < StateBase
     run_recorder(ctx)
     StateRecording.instance
   end
-  def load(ctx, record_filename)
+  def open(ctx, record_filename)
     state_stopped = StateStopped.instance
     open(record_filename, "r") do |f|
       while l = f.gets
         case l
-        when /^.* > record (.*)$/
+        when /^((.*)\w*>)?\w*load\w+(.*)$/
           state_stopped.load($1)
-        when /^.* > seek (.*)$/
+        when /^((.*)\w*>)?\w*seek\w+(.*)$/
           state_stopped.seek($1)
         else
           warn "ignoring line `#{l.chomp}'"
@@ -256,6 +256,7 @@ class StateDefault < StateBase
     else
       raise "programming error"
     end
+    record_command(:seek, ctx.pos.timecode)
     new_state
   end
   # If count is > 0, seek to position of count'th next marker.

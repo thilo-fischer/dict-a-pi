@@ -158,6 +158,9 @@ protected:
   virtual IState *btn_release_quit() = 0;
 };
 
+int btn_left_press_time = 0;
+int btn_right_press_time = 0;
+
 class StateDefault : public BaseState {
 protected:
   IState *btn_press_play() {
@@ -172,6 +175,8 @@ protected:
     return &state_recording_plain;
   }
   IState *btn_release_record() {
+    if (false) {
+    }
     return current_state;
   }
   IState *btn_press_mark() {
@@ -217,16 +222,20 @@ protected:
   }
   IState *btn_press_left() {
     std::cout << "seek_marker -1" << std::endl;
+    // TODO start timer, run `std::cout << "seek 0" << std::endl;` when timer exceeds before button release
     return current_state;
   }
   IState *btn_release_left() {
+    // TODO stop timer
     return current_state;
   }
   IState *btn_press_right() {
     std::cout << "seek_marker +1" << std::endl;
+    // TODO start timer, run `std::cout << "seek z0" << std::endl;` when timer exceeds before button release
     return current_state;
   }
   IState *btn_release_right() {
+    // TODO stop timer
     return current_state;
   }
   IState *btn_press_prev() {

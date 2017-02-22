@@ -1,0 +1,2 @@
+(echo record ; sleep 2; echo stop; echo seek 1000; echo record; sleep 2; echo stop; echo seek 0; echo seek z0; echo quit) | ./main.rb > test.dap 
+(echo open test.dap; echo seek 0; echo play) | ./main.rb

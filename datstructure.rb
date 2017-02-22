@@ -127,6 +127,7 @@ class ASlice
     end
   end
   def update_duration
+    # FIXME this is the file duration, not the slice duration !!
     `soxi '#{file}'`.lines.find {|l| l =~ /^Duration\s*:\s*(\d+):(\d\d):(\d\d).(\d+)/}
     @duration = (($1.to_i * 60 + $2.to_i) * 60 + $3.to_i) * 1000 + ($4 + "000")[0..2].to_i
   end
@@ -156,8 +157,8 @@ class Position
     slice_begin + @slice.duration
   end
   def go_slice_begin
-    @offset = 0
     @timecode -= @offset
+    @offset = 0
   end
   def go_slice_end
     go_slice_begin
@@ -190,17 +191,22 @@ class Position
   end
   def seek(target_timecode)
     while target_timecode != @timecode
+      #dbg("seek from #{@timecode} to #{target_timecode}; slice: #{slice_begin}...#{slice_end}; prev_silce?:#{prev_slice??true:false}; next_slice?:#{next_slice??true:false}")
       if target_timecode < slice_begin
         if prev_slice?
+          #dbg("seek from #{@timecode} to #{target_timecode} => go_prev_slice")
           go_prev_slice
         else
+          #dbg("seek from #{@timecode} to #{target_timecode} => go_slice_begin")
           go_slice_begin
           break
         end
       elsif target_timecode >= slice_end
         if next_slice?
+          #dbg("seek from #{@timecode} to #{target_timecode} => go_next_slice")
           go_next_slice
         else
+          #dbg("seek from #{@timecode} to #{target_timecode} => go_slice_end")
           go_slice_end
           break
         end

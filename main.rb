@@ -55,12 +55,13 @@ def process(cmd)
   when /^quit$/
     @state = @state.reset(@context)
     @keep_running = false
+    return
+  #when /^parse (.*)$/
+  #  cmds = File.open($1).readlines()
+  #  cmds.each {|c| process(c.chomp)}
   when /^open (.*)$/
-    cmds = File.open($1).readlines()
-    cmds.each {|c| process(c.chomp)}
-  when /^load (.*)$/
-    @state = @state.reset(@context)
-    @state = @state.load(@context, $1)
+    init_state = @state.reset(@context)
+    @state = init_state.open(@context, $1)
   when /^record$/
     @state = @state.record(@context)
   when /delete( (.*))?/
@@ -74,6 +75,7 @@ def process(cmd)
     @state = @state.pause(@context)
   when /^resume$/
     @state = @state.resume(@context)
+    
   when /^speed (play|stop)? (abs|rel) (.*)$/
     case $1
     when "play"
@@ -96,45 +98,61 @@ def process(cmd)
     value = $3.to_f
     @state = @state.speed(@context, value, mode)
       
-#  when /^seek (.*)$/
-#    arg = $1
-#    case arg
-#    when /^[+\-](.*)$/
-#      mode = :relative
-#    when /^#(.*)$/
-#      mode = :end_offset
-#    else
-#      mode = :absolute
-#    end
-#    amount = $1 # XXX
-#    case arg
-#    when /^(\d+\.?\d*)%$/
-#      amount = XXX
-#    when /^(\d+\.?\d*)s$/
-#      amount = $1.to_iXXX * 1000
-#    when /^(\d+):(\d+\.?\d*)s$/
-#      amount = ($1.XXX * 60 + $2.to_iXXX) * 1000
-#    when /^\d+\.?|\d*\.\d+$/
-#      amount = $1.to_iXXX
-#    else
-#      warn "invalid speed argument"
-#    end
-#    @state = @state.seek(amount, mode)
+  when /^seek (.*)$/
+    arg = $1
+    
+    sign = ""
+    amount = nil
+    
+    case arg
+    when /^([+\-])(.*)$/
+      mode = :relative
+      sign = $1
+      amount = $2
+    when /^z(.*)$/
+      mode = :end_offset
+      amount = $1
+    else
+      mode = :absolute
+      amount = arg
+    end
+
+    position = nil
+    case amount
+    when /^\d+$/
+      position = (sign + amount).to_i
+    #when /^((\d+):)?((\d+):)?(\d+\.?\d*)s?$/
+    #  position = "#{sign}1".to_i * ((($1.to_i * 60 + $2.to_i) * 60 + $3.to_f) * 1000).to_i
+    #when /^(\d+\.?\d*)%$/
+    #  position = XXX
+    else
+      warn "invalid seek argument"
+    end
+
+    @state = @state.seek(@context, position, mode) if position
     
   when /^set_marker( (.*))?$/
     @state = @state.set_marker(@context, $1)
+    
   when /^seek_marker ([+\-]?\d+)$/
     @state = @state.seek_marker(@context, $1.to_i)
+    
   when /^rm_marker( (.*))?$/
     raise "not yet supported"
+    
   else
     warn "unknown command: `#{cmd.chomp}'"
+    
   end
 
-  dbg(@context.pos.inspect)
+  dbg("Position: #{@context.pos.timecode} / #{@context.pos.slice.file} @ #{@context.pos.slice.offset} + #{@context.pos.offset}")
 end
 
 while @keep_running
-  cmd = STDIN.gets.chomp
-  process(cmd)
+  cmd = STDIN.gets
+  if cmd
+    process(cmd.chomp)
+  else
+    break
+  end
 end
