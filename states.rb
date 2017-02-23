@@ -116,16 +116,19 @@ class StateBase
       warn "invalid speed value (0.0) when run_player"
       return
     end
+    # FIXME introduce critical sections to avoid race conditions due to simultaneous access to ctx.
     Thread.new do
       while true
+        dbg_dump_position(ctx.pos)
         cmdline = "|mplayer -slave -quiet -af scaletempo -ss #{start_offset/1000.0} -endpos #{ctx.pos.slice.duration/1000.0} '#{file}'"
         dbg("call `#{cmdline}'")
         ctx.pipe = open(cmdline)
+        Process.waitpid(ctx.pipe.pid)
         if direction == :forward
           ctx.pos.go_slice_end
-          if ctx.pos.slice.next_slice?
-            ctx.pos.go_next_slide
-            start_offset = 0.0
+          if ctx.pos.next_slice?
+            ctx.pos.go_next_slice
+            start_offset = ctx.pos.slice.offset
             file = ctx.pos.slice.file
           else
             break
@@ -134,7 +137,7 @@ class StateBase
           ctx.pos.go_slice_begin
           if ctx.pos.slice.prev_slice?
             ctx.pos.go_prev_slide
-            start_offset = 0.0
+            start_offset = ctx.slice.duration - ctx.slice.offset
             file = reverse_filename(ctx.pos.slice.file)
           else
             break
@@ -152,6 +155,7 @@ class StateBase
     flush_pipe(ctx.pipe)
     ctx.pipe << 'pausing get_time_pos'
     file_offset = ctx.pipe.gets.to_f * 1000
+    # if Process.waitpid(ctx.pipe.pid, Process::WNOHANG) ... FIXME
     if ctx.speed > 0
       ctx.pos.offset = file_offset - ctx.pos.slice.offset
       ctx.pos.offset = ctx.pos.slice.duration if ctx.pos.offset > ctx.pos.slice.duration - LATCH_TOLERANCE
