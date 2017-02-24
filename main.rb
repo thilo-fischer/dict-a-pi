@@ -57,8 +57,12 @@ def dbg_dump_slices(slice)
   end
   timecode = 0
   while slice
-    warn "#{DateTime.now.strftime('%H-%M-%S_%L')}: @#{"% 5d" % timecode}: #{slice.file} (#{"% 5d" % slice.duration}) => [#{timecode}...#{timecode + slice.duration})"
-    timecode += slice.duration
+    if slice.duration != nil
+      warn "#{DateTime.now.strftime('%H-%M-%S_%L')}: @#{"% 5d" % timecode}: #{slice.file} (#{"% 5d" % slice.duration}) => [#{timecode}...#{timecode + slice.duration})"
+      timecode += slice.duration
+    else
+      warn "#{DateTime.now.strftime('%H-%M-%S_%L')}: @#{"% 5d" % timecode}: #{slice.file} => [#{timecode}...)"
+    end
     slice = slice.successor
   end
 end

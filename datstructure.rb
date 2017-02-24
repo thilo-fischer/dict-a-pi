@@ -160,14 +160,26 @@ class Position
   def slice_end
     slice_begin + @slice.duration
   end
+  # TODO replace manual offset computations with this function
+  def go_slice_offset(offset)
+    @timecode += offset - @offset
+    @offset = offset
+  end
   def go_slice_begin
-    @timecode -= @offset
-    @offset = 0
+    go_slice_offset(0)
   end
   def go_slice_end
-    go_slice_begin
-    @offset = @slice.duration
-    @timecode += @offset
+    go_slice_offset(@slice.duration)
+  end
+  # TODO replace manual offset matching with this function
+  def latch_offset(offset)
+    if offset < LATCH_TOLERANCE
+      0
+    elsif offset > @slice.duration - LATCH_TOLERANCE
+      @slice.duration
+    else
+      offset
+    end
   end
   ##
   # whether the current slice has a predecessor

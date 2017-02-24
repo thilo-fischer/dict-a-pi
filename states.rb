@@ -43,8 +43,12 @@ class StateInitial < StateBase; end
 class StateBase
   
   def method_missing(method_name, *args)
-    warn "invalid operation `#{method_name}' for current state `#{self.class.name}'"
-    self
+    if %w(play record pause resume stop speed seek seek_marker set_marker rm_marker delete reset open load).include? method_name
+      warn "invalid operation `#{method_name}' for current state `#{self.class.name}'"
+      self
+    else
+      super
+    end
   end
   
   # methods to be implemented by child classes:
@@ -122,7 +126,7 @@ class StateBase
         dbg_dump_position(ctx.pos)
         cmdline = "|mplayer -slave -quiet -af scaletempo -ss #{start_offset/1000.0} -endpos #{ctx.pos.slice.duration/1000.0} '#{file}'"
         dbg("call `#{cmdline}'")
-        ctx.pipe = open(cmdline)
+        ctx.pipe = open(cmdline, "w+")
         Process.waitpid(ctx.pipe.pid)
         if direction == :forward
           ctx.pos.go_slice_end
@@ -144,33 +148,41 @@ class StateBase
           end
         end # direction
       end # while-loop
+      record_command(:seek, ctx.pos.timecode)
+      # FIXME trigger state change to StateStopped
     end # thread-block
   end # def run_player
   def stop_player(ctx)
     pause_player(ctx) # to adapt ctx.pos
-    ctx.pipe << 'quit'
+    ctx.pipe << "quit\n"
     record_command(:seek, ctx.pos.timecode)
   end
   def pause_player(ctx)
     flush_pipe(ctx.pipe)
-    ctx.pipe << 'pausing get_time_pos'
-    file_offset = ctx.pipe.gets.to_f * 1000
-    # if Process.waitpid(ctx.pipe.pid, Process::WNOHANG) ... FIXME
-    if ctx.speed > 0
-      ctx.pos.offset = file_offset - ctx.pos.slice.offset
-      ctx.pos.offset = ctx.pos.slice.duration if ctx.pos.offset > ctx.pos.slice.duration - LATCH_TOLERANCE
-      ctx.pos.timecode = ctx.pos.slice_begin + ctx.pos.offset
-    elsif ctx.speed < 0
-      ctx.pos.offset = ctx.pos.slice.offset + ctx.pos.slice.duration - file_offset
-      ctx.pos.offset = 0 if ctx.pos.offset < LATCH_TOLERANCE
-      ctx.pos.timecode = ctx.pos.slice_begin + ctx.pos.offset      
-    else
+    begin
+      ctx.pipe << "pausing get_time_pos\n"
+    rescue Errno::EPIPE
+      warn "failed to send commands to mplayer slave -> assume it already quit"
+      # TODO set pause flag that makes mplayer thread loop pause ?
+      return
     end
+    time_pos = ctx.pipe.gets
+    raise "mplayer slave get_time_pos failed, got `#{time_pos}'" unless time_pos =~ /ANS_TIME_POSITION=(\d+\.\d)/
+    time_pos = $1
+    file_offset = time_pos.to_f * 1000
+    # if Process.waitpid(ctx.pipe.pid, Process::WNOHANG) ... FIXME
+    if ctx.speed < 0
+      slice_offset = ctx.pos.slice.offset + ctx.pos.slice.duration - file_offset
+    else
+      slice_offset = file_offset - ctx.pos.slice.offset
+    end
+    slice_offset = ctx.pos.latch_offset(slice_offset)
+    ctx.pos.go_slice_offset(slice_offset)
     record_command(:seek, ctx.pos.timecode)
   end
   def resume_player(ctx)
-    ctx.pipe << 'pausing get_property pause'
-    ctx.pipe << 'pause'
+    ctx.pipe << "pausing get_property pause\n"
+    ctx.pipe << "pause\n"
   end
   def speed_player(ctx, amount)
     if (ctx.pipe)
@@ -189,9 +201,18 @@ class StateBase
       else
         resume_player(ctx)
       end
-      ctx.pipe << "speed_set #{amount.abs}"
+      ctx.pipe << "speed_set #{amount.abs}\n"
     end
     ctx.speed = amount
+  end
+  def flush_pipe(pipe)
+    begin
+      while str = pipe.read_nonblock(4096)
+        dbg("FLUSHING #{str.inspect}")
+      end
+    rescue SystemCallError
+      dbg("fushed pipe content")
+    end
   end
   def reverse_filename(filename)
     filename.sub(/\.#{FILE_FORMAT}$/, ".reverse.#{FILE_FORMAT}")
