@@ -100,8 +100,8 @@ def process(cmd)
   when /^resume$/
     @state = @state.resume(@context)
     
-  when /^speed (play|stop)? (abs|rel) (.*)$/
-    case $1
+  when /^speed ((play|stop) )?(abs|rel) (.*)$/
+    case $2
     when "play"
       @state = @state.play(@context)
     when "stop"
@@ -109,9 +109,9 @@ def process(cmd)
     when ""
       nil
     else
-      raise "programming error"
+      warn "unknown argument to command speed: `#{$2}'"
     end
-    case $2
+    case $3
     when "abs"
       mode = :absolute
     when "rel"
@@ -119,7 +119,7 @@ def process(cmd)
     else
       raise "programming error"
     end
-    value = $3.to_f
+    value = $4.to_f
     @state = @state.speed(@context, value, mode)
       
   when /^seek (.*)$/

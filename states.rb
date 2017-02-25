@@ -108,10 +108,12 @@ class StateBase
   def resume_recorder(ctx)
     run_recorder(ctx)
   end
-  def run_player(ctx)
+  def run_player(ctx, direction = nil)
     start_offset = ctx.pos.slice.offset + ctx.pos.offset
     file = ctx.pos.slice.file
-    if ctx.speed > 0
+    if direction
+      raise unless direction == :forward or direction == :reverse
+    elsif ctx.speed > 0
       direction = :forward
     elsif ctx.speed < 0
       direction = :reverse
@@ -154,7 +156,13 @@ class StateBase
   end # def run_player
   def stop_player(ctx)
     pause_player(ctx) # to adapt ctx.pos
-    ctx.pipe << "quit\n"
+    begin
+      ctx.pipe << "quit\n"
+      Process.waitpid(ctx.pipe.pid)
+    rescue Errno::EPIPE, Errno::ECHILD
+      # seems like mplayer already quit -> ignore
+      nil
+    end
     record_command(:seek, ctx.pos.timecode)
   end
   def pause_player(ctx)
@@ -167,7 +175,11 @@ class StateBase
       return
     end
     time_pos = ctx.pipe.gets
-    raise "mplayer slave get_time_pos failed, got `#{time_pos}'" unless time_pos =~ /ANS_TIME_POSITION=(\d+\.\d)/
+    unless time_pos =~ /ANS_TIME_POSITION=(\d+\.\d)/
+      warn "mplayer slave get_time_pos failed"
+      flush_pipe(ctx.pipe)
+      raise "mplayer slave get_time_pos failed, got `#{time_pos}'"
+    end
     time_pos = $1
     file_offset = time_pos.to_f * 1000
     # if Process.waitpid(ctx.pipe.pid, Process::WNOHANG) ... FIXME
@@ -212,6 +224,8 @@ class StateBase
       end
     rescue SystemCallError
       dbg("fushed pipe content")
+    rescue EOFError
+      dbg("flushing pipe -> END OF FILE")      
     end
   end
   def reverse_filename(filename)
@@ -280,6 +294,7 @@ class StateDefault < StateBase
                   raise
                 end
     speed_player(ctx, value)
+    self
   end
   def seek(ctx, position, mode = :absolute)
     new_state = stop(ctx)
@@ -430,10 +445,9 @@ class StatePlaying < StateDefault
   end
   def seek(ctx, *args)
     # TODO args
-    pause_player(ctx)
+    tmp_state = stop(ctx)
     super
-    resume_player(ctx)
-    self
+    tmp_state.play(ctx)
   end
   def seek_marker(ctx, count)
     # TODO args
