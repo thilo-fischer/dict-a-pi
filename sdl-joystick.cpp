@@ -350,9 +350,13 @@ double playback_speed_base = 0.;
 double playback_speed_modify = 1.;
 
 void update_playback_speed() {
-  std::cout << "speed play abs "
-            << (playback_speed_base * playback_speed_modify)
-            << std::endl;
+  double speed_val = playback_speed_base * playback_speed_modify;
+  if (speed_val != 0) {
+    std::cout << "speed play abs " << speed_val << std::endl;
+  } else {
+    // reset speed such that successive play will have normal speed
+    std::cout << "speed stop abs 1" << std::endl;
+  }
 }
 
 void playback_axis_motion(Sint16 value) {
@@ -362,7 +366,7 @@ void playback_axis_motion(Sint16 value) {
 
 void speed_axis_motion(Sint16 value) {
   static const double MAX_SPEED_FACTOR = 16;
-  static const double MIN_SPEED_FACTOR = 0.25;
+  static const double MIN_SPEED_FACTOR = 0.5;
   if (value > 0) {
     playback_speed_modify = ((double) value) / MAX_AXIS_VALUE * MAX_SPEED_FACTOR;
   } else if (value < 0) {

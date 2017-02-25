@@ -455,13 +455,8 @@ class StatePlaying < StateDefault
   end
   def speed(ctx, value, mode = :absolute)
     abs_value = abs_speed_value(ctx, value, mode)
-    if abs_value.abs < 0.1
-      ctx.speed = abs_value
-      pause(ctx)
-    else
-      speed_player(ctx, abs_value)
-      self
-    end
+    speed_player(ctx, abs_value)
+    self
   end
   def seek(ctx, *args)
     # TODO args
