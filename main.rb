@@ -101,15 +101,15 @@ def process(cmd)
     @state = @state.resume(@context)
     
   when /^speed ((play|stop) )?(abs|rel) (.*)$/
-    case $2
-    when "play"
-      @state = @state.play(@context)
-    when "stop"
-      @state = @state.stop(@context)
-    when ""
-      nil
-    else
-      warn "unknown argument to command speed: `#{$2}'"
+    if $1
+      case $2
+      when "play"
+        @state = @state.play(@context)
+      when "stop"
+        @state = @state.stop(@context)
+      else
+        warn "unknown argument to command speed: `#{$2}'"
+      end
     end
     case $3
     when "abs"

@@ -110,6 +110,7 @@ class StateBase
   end
   def run_player(ctx, direction = nil)
     start_offset = ctx.pos.slice.offset + ctx.pos.offset
+    endpos = ctx.pos.slice.duration
     file = ctx.pos.slice.file
     if direction
       raise unless direction == :forward or direction == :reverse
@@ -118,6 +119,9 @@ class StateBase
     elsif ctx.speed < 0
       direction = :reverse
       file = reverse_filename(file)
+      # FIXME ctx.pos.slice.duration should be ctx.pos.slice.file_duration
+      start_offset = ctx.pos.slice.duration - ctx.pos.offset
+      endpos = ctx.pos.slice.duration - ctx.pos.slice.offset
     else
       warn "invalid speed value (0.0) when run_player"
       return
@@ -126,7 +130,7 @@ class StateBase
     Thread.new do
       while true
         dbg_dump_position(ctx.pos)
-        cmdline = "|mplayer -slave -quiet -af scaletempo -ss #{start_offset/1000.0} -endpos #{ctx.pos.slice.duration/1000.0} '#{file}'"
+        cmdline = "|mplayer -slave -quiet -af scaletempo -speed #{ctx.speed.abs} -ss #{start_offset/1000.0} -endpos #{endpos/1000.0} '#{file}'"
         dbg("call `#{cmdline}'")
         ctx.pipe = open(cmdline, "w+")
         Process.waitpid(ctx.pipe.pid)
@@ -143,7 +147,9 @@ class StateBase
           ctx.pos.go_slice_begin
           if ctx.pos.slice.prev_slice?
             ctx.pos.go_prev_slide
-            start_offset = ctx.slice.duration - ctx.slice.offset
+            # FIXME ctx.pos.slice.duration should be ctx.pos.slice.file_duration
+            start_offset = ctx.pos.slice.duration - ctx.pos.offset
+            endpos = ctx.pos.slice.duration - ctx.pos.slice.offset
             file = reverse_filename(ctx.pos.slice.file)
           else
             break
@@ -196,26 +202,36 @@ class StateBase
     ctx.pipe << "pausing get_property pause\n"
     ctx.pipe << "pause\n"
   end
-  def speed_player(ctx, amount)
-    if (ctx.pipe)
-      if amount.abs < 0.1
-        pause_player(ctx)
-        ctx.speed = amount
-        return
-      end
-      # change playback direction if speed changes from negative to positive value or vice verse
-      if amount > 0 and ctx.speed <= 0
-        stop_player(ctx)
-        run_player(ctx)
-      elsif amount < 0 and ctx.speed >= 0
-        stop_player(ctx)
-        run_player(ctx, :reverse)
-      else
-        resume_player(ctx)
-      end
-      ctx.pipe << "speed_set #{amount.abs}\n"
+  def abs_speed_value(ctx, value, mode = :absolute)
+    abs_val = case mode
+              when :relative
+                ctx.speed + value
+              when :absolute
+                value
+              else
+                warn "invalid speed mode: `#{mode}'"
+                1
+              end
+    # restrict to max speed value range supported by mplayer
+    if abs_val > 0
+      abs_val =  0.01 if abs_val < 0.01
+      abs_val =  100  if abs_val > 100
+    else
+      abs_val = -0.01 if abs_val > -0.01
+      abs_val = -100  if abs_val < -100
     end
-    ctx.speed = amount
+    abs_val
+  end
+  def speed_player(ctx, value)
+    # change playback direction if speed changes from negative to positive value or vice verse
+    if (value > 0 and ctx.speed <= 0) or (value < 0 and ctx.speed >= 0)
+      stop_player(ctx)
+      ctx.speed = value
+      run_player(ctx)
+    else
+      ctx.pipe << "speed_set #{value.abs}\n"
+      ctx.speed = value
+    end
   end
   def flush_pipe(pipe)
     begin
@@ -229,7 +245,8 @@ class StateBase
     end
   end
   def reverse_filename(filename)
-    filename.sub(/\.#{FILE_FORMAT}$/, ".reverse.#{FILE_FORMAT}")
+    #ext = extname(filename)
+    filename.sub(/(.*)\.(.*?)$/, '\1.reverse.\2')
   end
 end # class StateBase
 
@@ -285,15 +302,7 @@ class StateDefault < StateBase
   # resume
   # stop
   def speed(ctx, value, mode = :absolute)
-    abs_value = case mode
-                when :relative
-                  ctx.speed + value
-                when :absolute
-                  value
-                else
-                  raise
-                end
-    speed_player(ctx, value)
+    ctx.speed = abs_speed_value(ctx, value, mode)
     self
   end
   def seek(ctx, position, mode = :absolute)
@@ -442,6 +451,16 @@ class StatePlaying < StateDefault
   def stop(ctx)
     stop_player(ctx)
     StateStopped.instance
+  end
+  def speed(ctx, value, mode = :absolute)
+    abs_value = abs_speed_value(ctx, value, mode)
+    if abs_value.abs < 0.1
+      ctx.speed = abs_value
+      pause(ctx)
+    else
+      speed_player(ctx, abs_value)
+      self
+    end
   end
   def seek(ctx, *args)
     # TODO args
