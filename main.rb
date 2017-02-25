@@ -45,7 +45,7 @@ end
 
 def dbg_dump_position(pos)
   if pos.slice
-    dbg("Position: #{pos.timecode} / #{pos.slice.file} @ #{pos.slice.offset} + #{pos.offset}")
+    dbg("Position: #{pos.timecode} / #{pos.slice.file} @ #{pos.slice.offset} + #{pos.offset} of #{pos.slice.file_duration})")
   else
     dbg("Position: #{pos.timecode} / #{pos.offset}")
   end
@@ -56,15 +56,17 @@ def dbg_dump_slices(slice)
     slice = slice.predecessor
   end
   timecode = 0
+  warn ">>> slices @ #{DateTime.now.strftime('%H-%M-%S_%L')}:"
   while slice
     if slice.duration != nil
-      warn "#{DateTime.now.strftime('%H-%M-%S_%L')}: @#{"% 5d" % timecode}: #{slice.file} (#{"% 5d" % slice.duration}) => [#{timecode}...#{timecode + slice.duration})"
+      warn "[#{"% 5d" % timecode}...#{"% 5d" % (timecode + slice.duration)}) -> #{slice}: [#{"% 5d" % slice.offset}...#{"% 5d" % (slice.offset + slice.duration)}) of #{slice.file}[#{"% 5d" % slice.file_duration}]"
       timecode += slice.duration
     else
-      warn "#{DateTime.now.strftime('%H-%M-%S_%L')}: @#{"% 5d" % timecode}: #{slice.file} => [#{timecode}...)"
+      warn "[#{"% 5d" % timecode}...  ?  ) -> #{slice}: [#{"% 5d" % slice.offset}...  ?  ) of #{slice.file}" + (slice.file_duration ? "[#{"% 5d" % slice.file_duration}]" : "[  ?  ]")
     end
     slice = slice.successor
   end
+  warn "<<<"
 end
 
 @context = StateMachineContext.new

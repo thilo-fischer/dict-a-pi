@@ -97,7 +97,8 @@ class StateBase
 
     system("sox '#{file}' '#{reverse_filename(file)}' reverse") or warn "failed to create reverse file"
     
-    ctx.pos.slice.update_duration
+    ctx.pos.slice.update_file_duration
+    ctx.pos.slice.duration = ctx.pos.slice.file_duration
     ctx.pos.offset = ctx.pos.slice.duration
     ctx.pos.timecode += ctx.pos.slice.duration
     record_command(:seek, ctx.pos.timecode)
@@ -110,7 +111,7 @@ class StateBase
   end
   def run_player(ctx, direction = nil)
     start_offset = ctx.pos.slice.offset + ctx.pos.offset
-    endpos = ctx.pos.slice.duration
+    endpos = ctx.pos.slice.offset + ctx.pos.slice.duration
     file = ctx.pos.slice.file
     if direction
       raise unless direction == :forward or direction == :reverse
@@ -119,9 +120,8 @@ class StateBase
     elsif ctx.speed < 0
       direction = :reverse
       file = reverse_filename(file)
-      # FIXME ctx.pos.slice.duration should be ctx.pos.slice.file_duration
-      start_offset = ctx.pos.slice.duration - ctx.pos.offset
-      endpos = ctx.pos.slice.duration - ctx.pos.slice.offset
+      start_offset = ctx.pos.slice.file_duration - start_offset #ctx.pos.offset
+      endpos = ctx.pos.slice.file_duration - ctx.pos.slice.offset
     else
       warn "invalid speed value (0.0) when run_player"
       return
@@ -135,23 +135,24 @@ class StateBase
         ctx.pipe = open(cmdline, "w+")
         Process.waitpid(ctx.pipe.pid)
         if direction == :forward
-          ctx.pos.go_slice_end
           if ctx.pos.next_slice?
             ctx.pos.go_next_slice
             start_offset = ctx.pos.slice.offset
+            endpos = ctx.pos.slice.offset + ctx.pos.slice.duration
             file = ctx.pos.slice.file
           else
+            ctx.pos.go_slice_end
             break
           end
         else
-          ctx.pos.go_slice_begin
           if ctx.pos.slice.prev_slice?
-            ctx.pos.go_prev_slide
-            # FIXME ctx.pos.slice.duration should be ctx.pos.slice.file_duration
-            start_offset = ctx.pos.slice.duration - ctx.pos.offset
-            endpos = ctx.pos.slice.duration - ctx.pos.slice.offset
+            ctx.pos.go_prev_slice
+            ctx.pos.go_slice_end
+            endpos = ctx.pos.slice.file_duration - ctx.pos.slice.offset
+            start_offset = endpos - ctx.pos.slice.duration
             file = reverse_filename(ctx.pos.slice.file)
           else
+            ctx.pos.go_slice_begin
             break
           end
         end # direction
@@ -586,7 +587,8 @@ class StateStopped < StateDefault
   end
   def load(ctx, slice_filename)
     new_slice = ASlice.new(slice_filename)
-    new_slice.update_duration
+    new_slice.update_file_duration
+    new_slice.duration = new_slice.file_duration
     # XXX >> redundant to run_recorder
     if ctx.pos.slice
       latched_offset = ctx.pos.slice.insert(ctx.pos.offset, new_slice)

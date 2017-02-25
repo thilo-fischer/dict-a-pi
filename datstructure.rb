@@ -17,13 +17,15 @@
 class ASlice
   # file - filename of the audio file
   # offset - slice start as milliseconds after start of audio file
+  # file_duration - duration of file in milliseconds
   # duration - duration of slice in milliseconds
   # markers - array of objects of class Marker
-  attr_accessor :file, :offset, :duration, :markers
+  attr_accessor :file, :file_duration, :offset, :duration, :markers
   # predecessor, successor - preceeding and succeeding audio slices (doubly linked list)
   attr_accessor :predecessor, :successor
-  def initialize(file, offset = 0.0, duration = nil)
+  def initialize(file, file_duration = nil, offset = 0.0, duration = nil)
     @file = file
+    @file_duration = file_duration
     @offset = offset
     @duration = duration
     @markers = []
@@ -81,7 +83,7 @@ class ASlice
       warn "invalid offset: #{offset}"
       return
     end
-    tail = ASlice.new(@file, @offset + offset, @duration - offset)
+    tail = ASlice.new(@file, @file_duration, @offset + offset, @duration - offset)
     @duration = offset
     @successor.predecessor = tail if @successor
     tail.successor = @successor
@@ -130,10 +132,10 @@ class ASlice
       result[:previous] = @markes.first
     end
   end
-  def update_duration
-    # FIXME this is the file duration, not the slice duration !!
+  def update_file_duration
+    warn "redundant `update_file_duration'" if @file_duration
     `soxi '#{file}'`.lines.find {|l| l =~ /^Duration\s*:\s*(\d+):(\d\d):(\d\d).(\d+)/}
-    @duration = (($1.to_i * 60 + $2.to_i) * 60 + $3.to_i) * 1000 + ($4 + "000")[0..2].to_i
+    @file_duration = (($1.to_i * 60 + $2.to_i) * 60 + $3.to_i) * 1000 + ($4 + "000")[0..2].to_i
   end
 end # class ASlice
 
