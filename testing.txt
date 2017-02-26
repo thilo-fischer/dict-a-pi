@@ -2,3 +2,7 @@
 (echo open test.dap; echo seek 0; echo play; sleep 5; echo quit) | ./main.rb
 
 (echo open test.dap; echo seek 0; echo play; sleep 1; echo stop; sleep 1) | ./main.rb
+
+(echo open brq.dap; echo seek 0; echo play; sleep 4; echo speed abs -1.5; sleep 2; echo speed abs 1.0; sleep 3; echo speed abs 4; sleep 4; echo speed abs 1; sleep 4; echo quit; sleep 1) | ./main.rb
+
+g++ sdl-joystick.cpp -o sdl-joystick `sdl2-config --libs` `sdl2-config --cflags` && (./sdl-joystick | ./main.rb > test.dap)
