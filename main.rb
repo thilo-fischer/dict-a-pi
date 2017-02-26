@@ -73,6 +73,8 @@ end
 @state = StateInitial.instance
 @keep_running = true
 
+$mutex = Mutex.new
+
 def process(cmd)
   dbg("processing `#{cmd}'")
   case cmd
@@ -171,13 +173,16 @@ def process(cmd)
     
   end
 
+  dbg(@state.inspect)
   dbg_dump_position(@context.pos)
 end
 
 while @keep_running
   cmd = STDIN.gets
   if cmd
-    process(cmd.chomp)
+    $mutex.synchronize {
+      process(cmd.chomp)
+    }
   else
     break
   end

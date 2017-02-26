@@ -126,43 +126,55 @@ class StateBase
       warn "invalid speed value (0.0) when run_player"
       return
     end
-    # FIXME introduce critical sections to avoid race conditions due to simultaneous access to ctx.
     Thread.new do
-      while true
-        dbg_dump_position(ctx.pos)
-        cmdline = "|mplayer -slave -quiet -af scaletempo -speed #{ctx.speed.abs} -ss #{start_offset/1000.0} -endpos #{endpos/1000.0} '#{file}'"
-        dbg("call `#{cmdline}'")
-        ctx.pipe = open(cmdline, "w+")
+      @continue_playback = true
+      while @continue_playback
+        $mutex.synchronize {
+          dbg_dump_position(ctx.pos)
+          cmdline = "|mplayer -slave -quiet -af scaletempo -speed #{ctx.speed.abs} -ss #{start_offset/1000.0} -endpos #{endpos/1000.0} '#{file}'"
+          dbg("call `#{cmdline}'")
+          ctx.pipe = open(cmdline, "w+")
+        }
         Process.waitpid(ctx.pipe.pid)
-        if direction == :forward
-          if ctx.pos.next_slice?
-            ctx.pos.go_next_slice
-            start_offset = ctx.pos.slice.offset
-            endpos = ctx.pos.slice.offset + ctx.pos.slice.duration
-            file = ctx.pos.slice.file
+        $mutex.synchronize {
+          break unless @continue_playback
+          if direction == :forward
+            if ctx.pos.next_slice?
+              ctx.pos.go_next_slice
+              start_offset = ctx.pos.slice.offset
+              endpos = ctx.pos.slice.offset + ctx.pos.slice.duration
+              file = ctx.pos.slice.file
+            else
+              ctx.pos.go_slice_end
+              continue_playback = false
+            end
           else
-            ctx.pos.go_slice_end
-            break
-          end
-        else
-          if ctx.pos.slice.prev_slice?
-            ctx.pos.go_prev_slice
-            ctx.pos.go_slice_end
-            endpos = ctx.pos.slice.file_duration - ctx.pos.slice.offset
-            start_offset = endpos - ctx.pos.slice.duration
-            file = reverse_filename(ctx.pos.slice.file)
-          else
-            ctx.pos.go_slice_begin
-            break
-          end
-        end # direction
+            if ctx.pos.slice.prev_slice?
+              ctx.pos.go_prev_slice
+              ctx.pos.go_slice_end
+              endpos = ctx.pos.slice.file_duration - ctx.pos.slice.offset
+              start_offset = endpos - ctx.pos.slice.duration
+              file = reverse_filename(ctx.pos.slice.file)
+            else
+              ctx.pos.go_slice_begin
+              continue_playback = false
+            end
+          end # direction
+        }
       end # while-loop
-      record_command(:seek, ctx.pos.timecode)
-      # FIXME trigger state change to StateStopped
+      $mutex.synchronize {
+        if @continue_playback
+          #record_command(:seek, ctx.pos.timecode)
+          #@continue_playback = false
+          # => will be done throgh +process("stop")+
+          process("stop")
+        end
+      }
     end # thread-block
   end # def run_player
   def stop_player(ctx)
     pause_player(ctx) # to adapt ctx.pos
+    @continue_playback = false
     begin
       ctx.pipe << "quit\n"
       Process.waitpid(ctx.pipe.pid)
@@ -181,11 +193,16 @@ class StateBase
       # TODO set pause flag that makes mplayer thread loop pause ?
       return
     end
-    time_pos = ctx.pipe.gets
+    time_pos = ""
+    while time_pos.empty?
+      time_pos = ctx.pipe.gets
+      time_pos.gsub!("\e[A\r\e[K\n", "") # these characters might appear delayed due removal of some info text displayed temporarily on the terminal
+      time_pos.gsub!("\n", "")
+    end
     unless time_pos =~ /ANS_TIME_POSITION=(\d+\.\d)/
       warn "mplayer slave get_time_pos failed"
       flush_pipe(ctx.pipe)
-      raise "mplayer slave get_time_pos failed, got `#{time_pos}'"
+      raise "mplayer slave get_time_pos failed, got `#{time_pos.inspect}'"
     end
     time_pos = $1
     file_offset = time_pos.to_f * 1000
@@ -237,7 +254,7 @@ class StateBase
   def flush_pipe(pipe)
     begin
       while str = pipe.read_nonblock(4096)
-        dbg("FLUSHING #{str.inspect}")
+        dbg("FLUSHING `#{str}'")
       end
     rescue SystemCallError
       dbg("fushed pipe content")
