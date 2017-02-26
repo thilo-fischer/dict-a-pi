@@ -109,6 +109,15 @@ class StateBase
   def resume_recorder(ctx)
     run_recorder(ctx)
   end
+  def start_playback(ctx, file, from, to)
+    cmdline = "|mplayer -slave -input nodefault-bindings -noconfig all -quiet -af scaletempo -speed #{ctx.speed.abs} -ss #{from/1000.0} -endpos #{to/1000.0} '#{file}'"
+    dbg_dump_position(ctx.pos)
+    dbg("call `#{cmdline}'")
+    ctx.pipe = open(cmdline, "w+")
+    # block until mplayer has started
+    tmp = ctx.pipe.gets
+    dbg("pipe.gets returned `#{tmp}'")
+  end
   def run_player(ctx, direction = nil)
     start_offset = ctx.pos.slice.offset + ctx.pos.offset
     endpos = ctx.pos.slice.offset + ctx.pos.slice.duration
@@ -126,15 +135,10 @@ class StateBase
       warn "invalid speed value (0.0) when run_player"
       return
     end
+    @continue_playback = true
+    start_playback(ctx, file, start_offset, endpos)
     Thread.new do
-      @continue_playback = true
       while @continue_playback
-        $mutex.synchronize {
-          dbg_dump_position(ctx.pos)
-          cmdline = "|mplayer -slave -input nodefault-bindings -noconfig all -quiet -af scaletempo -speed #{ctx.speed.abs} -ss #{start_offset/1000.0} -endpos #{endpos/1000.0} '#{file}'"
-          dbg("call `#{cmdline}'")
-          ctx.pipe = open(cmdline, "w+")
-        }
         Process.waitpid(ctx.pipe.pid)
         $mutex.synchronize {
           break unless @continue_playback
@@ -146,7 +150,7 @@ class StateBase
               file = ctx.pos.slice.file
             else
               ctx.pos.go_slice_end
-              continue_playback = false
+              @continue_playback = false
             end
           else
             if ctx.pos.slice.prev_slice?
@@ -157,9 +161,10 @@ class StateBase
               file = reverse_filename(ctx.pos.slice.file)
             else
               ctx.pos.go_slice_begin
-              continue_playback = false
+              @continue_playback = false
             end
           end # direction
+          start_playback(ctx, file, start_offset, endpos) if @continue_playback          
         }
       end # while-loop
       $mutex.synchronize {
@@ -175,10 +180,10 @@ class StateBase
   def stop_player(ctx)
     pause_player(ctx) # to adapt ctx.pos
     @continue_playback = false
+    player_send_command(ctx.pipe, "quit")
     begin
-      ctx.pipe << "quit\n"
       Process.waitpid(ctx.pipe.pid)
-    rescue Errno::EPIPE, Errno::ECHILD
+    rescue Errno::ECHILD
       # seems like mplayer already quit -> ignore
       nil
     end
@@ -186,10 +191,7 @@ class StateBase
   end
   def pause_player(ctx)
     flush_pipe(ctx.pipe)
-    begin
-      ctx.pipe << "pausing get_time_pos\n"
-    rescue Errno::EPIPE
-      warn "failed to send commands to mplayer slave -> assume it already quit"
+    unless player_send_command(ctx.pipe, "pausing get_time_pos")
       # TODO set pause flag that makes mplayer thread loop pause ?
       return
     end
@@ -218,13 +220,8 @@ class StateBase
     record_command(:seek, ctx.pos.timecode)
   end
   def resume_player(ctx)
-    begin
       # `pause' command pauses and unpauses => XXX ensure mplayer is in pause mode before passing it the `pause' command to resume
-      ctx.pipe << "pause\n"
-    rescue Errno::EPIPE
-      warn "failed to send commands to mplayer slave -> assume it already quit"
-      return
-    end
+    player_send_command(ctx.pipe, "pause")
   end
   def abs_speed_value(ctx, value, mode = :absolute)
     abs_val = case mode
@@ -253,10 +250,20 @@ class StateBase
       ctx.speed = value
       run_player(ctx)
     else
-      ctx.pipe << "speed_set #{value.abs}\n"
+      player_send_command(ctx.pipe, "speed_set #{value.abs}")
       flush_pipe(ctx.pipe)
       ctx.speed = value
     end
+  end
+  def player_send_command(pipe, cmd)
+    dbg("player_send_command: `#{cmd}'")
+    begin
+      pipe << cmd << "\n"
+      return true
+    rescue Errno::EPIPE
+      warn "Failed to send command to MPlayer slave: `#{cmd}'. Seems MPlayer already quit."
+    end
+    false
   end
   def flush_pipe(pipe)
     begin
