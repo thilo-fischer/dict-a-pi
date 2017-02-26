@@ -37,7 +37,6 @@ LATCH_TOLERANCE = 200
 
 # must be file extension recognized by sox
 FILE_FORMAT = "mp3"
-#FILE_FORMAT = "wav"
 
 def dbg(*args)
   warn "#{DateTime.now.strftime('%H-%M-%S_%L')}: #{args}"

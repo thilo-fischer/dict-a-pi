@@ -131,7 +131,7 @@ class StateBase
       while @continue_playback
         $mutex.synchronize {
           dbg_dump_position(ctx.pos)
-          cmdline = "|mplayer -slave -quiet -af scaletempo -speed #{ctx.speed.abs} -ss #{start_offset/1000.0} -endpos #{endpos/1000.0} '#{file}'"
+          cmdline = "|mplayer -slave -input nodefault-bindings -noconfig all -quiet -af scaletempo -speed #{ctx.speed.abs} -ss #{start_offset/1000.0} -endpos #{endpos/1000.0} '#{file}'"
           dbg("call `#{cmdline}'")
           ctx.pipe = open(cmdline, "w+")
         }
