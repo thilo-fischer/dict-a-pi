@@ -217,8 +217,13 @@ class StateBase
     record_command(:seek, ctx.pos.timecode)
   end
   def resume_player(ctx)
-    ctx.pipe << "pausing get_property pause\n"
-    ctx.pipe << "pause\n"
+    begin
+      # `pause' command pauses and unpauses => XXX ensure mplayer is in pause mode before passing it the `pause' command to resume
+      ctx.pipe << "pause\n"
+    rescue Errno::EPIPE
+      warn "failed to send commands to mplayer slave -> assume it already quit"
+      return
+    end
   end
   def abs_speed_value(ctx, value, mode = :absolute)
     abs_val = case mode
