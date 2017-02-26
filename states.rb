@@ -196,7 +196,8 @@ class StateBase
     time_pos = ""
     while time_pos.empty?
       time_pos = ctx.pipe.gets
-      time_pos.gsub!("\e[A\r\e[K\n", "") # these characters might appear delayed due removal of some info text displayed temporarily on the terminal
+      time_pos.gsub!("\e[A\r\e[K", "") # these characters might appear delayed due removal of some info text displayed temporarily on the terminal
+      time_pos.gsub!(/(Geschwindigkeit|Speed):\s*x\s*\d+\.?\d*/i, "")
       time_pos.gsub!("\n", "")
     end
     unless time_pos =~ /ANS_TIME_POSITION=(\d+\.\d)/
@@ -253,6 +254,7 @@ class StateBase
       run_player(ctx)
     else
       ctx.pipe << "speed_set #{value.abs}\n"
+      flush_pipe(ctx.pipe)
       ctx.speed = value
     end
   end
@@ -528,6 +530,11 @@ class StatePlayingPause < StateDefault
   def stop(ctx)
     stop_player(ctx)
     StateStopped.instance
+  end
+  def speed(ctx, value, mode = :absolute)
+    abs_value = abs_speed_value(ctx, value, mode)
+    speed_player(ctx, abs_value)
+    self
   end
   def delete(ctx)
     stop(ctx).delete(ctx)

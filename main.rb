@@ -103,11 +103,15 @@ def process(cmd)
   when /^resume$/
     @state = @state.resume(@context)
     
+  #when /^speed ((play|pause|stop) )?(abs|rel) (.*)$/
   when /^speed ((play|stop) )?(abs|rel) (.*)$/
     if $1
       case $2
       when "play"
         @state = @state.play(@context)
+      # XXX ensure changing speed in pause mode does not unpause player
+      #when "pause"
+      #  @state = @state.pause(@context)
       when "stop"
         @state = @state.stop(@context)
       else

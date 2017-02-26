@@ -355,7 +355,10 @@ void update_playback_speed() {
     std::cout << "speed play abs " << speed_val << std::endl;
   } else {
     // reset speed such that successive play will have normal speed
+    //std::cout << "speed pause abs 1" << std::endl;
     std::cout << "speed stop abs 1" << std::endl;
+    // FIXME integrate axis in UI state machine
+    current_state = &state_default;
   }
 }
 
@@ -368,9 +371,11 @@ void speed_axis_motion(Sint16 value) {
   static const double MAX_SPEED_FACTOR = 16;
   static const double MIN_SPEED_FACTOR = 0.5;
   if (value > 0) {
-    playback_speed_modify = ((double) value) / MAX_AXIS_VALUE * MAX_SPEED_FACTOR;
+    // downwards
+    playback_speed_modify = 1. - (((double) value) / MAX_AXIS_VALUE) * (1. - MIN_SPEED_FACTOR);
   } else if (value < 0) {
-    playback_speed_modify = ((double) value) / MIN_AXIS_VALUE * MIN_SPEED_FACTOR;
+    // upwards
+    playback_speed_modify = 1. + (((double) value) / MIN_AXIS_VALUE) * (MAX_SPEED_FACTOR - 1.);
   } else {
     playback_speed_modify = 1.;
   }
