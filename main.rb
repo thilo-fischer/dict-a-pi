@@ -108,7 +108,7 @@ def process(cmd)
     if $1
       case $2
       when "play"
-        @state = @state.play(@context)
+        nil # start playback only after below speed change
       # XXX ensure changing speed in pause mode does not unpause player
       #when "pause"
       #  @state = @state.pause(@context)
@@ -128,6 +128,9 @@ def process(cmd)
     end
     value = $4.to_f
     @state = @state.speed(@context, value, mode)
+    if $1 and $2 == "play"
+      @state = @state.play(@context)
+    end
       
   when /^seek (.*)$/
     arg = $1

@@ -129,7 +129,7 @@ class StateBase
     elsif ctx.speed < 0
       direction = :reverse
       file = reverse_filename(file)
-      start_offset = ctx.pos.slice.file_duration - start_offset #ctx.pos.offset
+      start_offset = ctx.pos.slice.file_duration - start_offset
       endpos = ctx.pos.slice.file_duration - ctx.pos.slice.offset
     else
       warn "invalid speed value (0.0) when run_player"
@@ -140,7 +140,9 @@ class StateBase
     Thread.new do
       while @continue_playback
         Process.waitpid(ctx.pipe.pid)
+        dbg(" *** mplayer reached end of file")
         $mutex.synchronize {
+          dbg(" *** mplayer reached end of file")
           break unless @continue_playback
           if direction == :forward
             if ctx.pos.next_slice?
@@ -149,17 +151,19 @@ class StateBase
               endpos = ctx.pos.slice.offset + ctx.pos.slice.duration
               file = ctx.pos.slice.file
             else
+              dbg(" *** reached end of last slice")
               ctx.pos.go_slice_end
               @continue_playback = false
             end
           else
-            if ctx.pos.slice.prev_slice?
+            if ctx.pos.prev_slice?
               ctx.pos.go_prev_slice
               ctx.pos.go_slice_end
               endpos = ctx.pos.slice.file_duration - ctx.pos.slice.offset
               start_offset = endpos - ctx.pos.slice.duration
               file = reverse_filename(ctx.pos.slice.file)
             else
+              dbg(" *** reached beginning of first slice")
               ctx.pos.go_slice_begin
               @continue_playback = false
             end
@@ -195,19 +199,18 @@ class StateBase
       # TODO set pause flag that makes mplayer thread loop pause ?
       return
     end
-    time_pos = ""
-    while time_pos.empty?
-      time_pos = ctx.pipe.gets
-      time_pos.gsub!("\e[A\r\e[K", "") # these characters might appear delayed due removal of some info text displayed temporarily on the terminal
-      time_pos.gsub!(/(Geschwindigkeit|Speed):\s*x\s*\d+\.?\d*/i, "")
-      time_pos.gsub!("\n", "")
+    time_pos = nil
+    until time_pos
+      begin
+        line = ctx.pipe.readline
+      rescue EOFError
+        warn "seems mplayer quit while we were awaiting time_pos"
+        return
+      end
+      dbg("awaiting time_pos, got: `#{line}'")
+      line =~ /ANS_TIME_POSITION=(\d+\.\d)/
+      time_pos = $1
     end
-    unless time_pos =~ /ANS_TIME_POSITION=(\d+\.\d)/
-      warn "mplayer slave get_time_pos failed"
-      flush_pipe(ctx.pipe)
-      raise "mplayer slave get_time_pos failed, got `#{time_pos.inspect}'"
-    end
-    time_pos = $1
     file_offset = time_pos.to_f * 1000
     # if Process.waitpid(ctx.pipe.pid, Process::WNOHANG) ... FIXME
     if ctx.speed < 0
